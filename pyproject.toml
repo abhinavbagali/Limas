@@ -1,0 +1,30 @@
+[project]
+name = "limas-rag-middleware"
+version = "0.1.0"
+description = "Limas: subcortical context compression middleware for RAG pipelines"
+requires-python = ">=3.10"
+readme = "README.md"
+authors = [{ name = "Copilot" }]
+
+[project.optional-dependencies]
+discourse = ["spacy>=3.7,<4"]
+
+[project.scripts]
+limas = "context_compressor.cli:main"
+context-compressor = "context_compressor.cli:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+context_compressor = ["service/static/*.html"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]

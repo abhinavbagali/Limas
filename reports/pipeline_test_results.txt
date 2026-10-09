@@ -1,0 +1,35 @@
+=== Limas Pipeline Test Report ===
+Timestamp: 2026-10-09T07:00:46Z
+
+test_analytics_endpoint_aggregates_saved_workbook_metrics (__main__.ContextCompressorPipelineTests.test_analytics_endpoint_aggregates_saved_workbook_metrics) ... ok
+test_api_health_and_compression (__main__.ContextCompressorPipelineTests.test_api_health_and_compression) ... ok
+test_benchmark_query_set_groups_latency_and_quality_proxies (__main__.ContextCompressorPipelineTests.test_benchmark_query_set_groups_latency_and_quality_proxies) ... ok
+test_benchmark_returns_expected_shape (__main__.ContextCompressorPipelineTests.test_benchmark_returns_expected_shape) ... ok
+test_compare_generates_both_modes_and_saves_metrics (__main__.ContextCompressorPipelineTests.test_compare_generates_both_modes_and_saves_metrics) ... ok
+test_compare_reports_branch_for_failed_concurrent_request (__main__.ContextCompressorPipelineTests.test_compare_reports_branch_for_failed_concurrent_request) ... ok
+test_compare_reports_missing_groq_key (__main__.ContextCompressorPipelineTests.test_compare_reports_missing_groq_key) ... ok
+test_compare_runs_generation_requests_concurrently (__main__.ContextCompressorPipelineTests.test_compare_runs_generation_requests_concurrently) ... ok
+test_comparison_workbook_migrates_legacy_metrics (__main__.ContextCompressorPipelineTests.test_comparison_workbook_migrates_legacy_metrics) ... ok
+test_comparison_workbook_migrates_previous_comparison_schema (__main__.ContextCompressorPipelineTests.test_comparison_workbook_migrates_previous_comparison_schema) ... ok
+test_compress_keeps_relevant_sentences (__main__.ContextCompressorPipelineTests.test_compress_keeps_relevant_sentences) ... ok
+test_compressor_keeps_atomic_coreference_pair_and_reports_metadata (__main__.ContextCompressorPipelineTests.test_compressor_keeps_atomic_coreference_pair_and_reports_metadata) ... ok
+test_discourse_analyzer_links_pronouns_and_connectives_within_passage (__main__.ContextCompressorPipelineTests.test_discourse_analyzer_links_pronouns_and_connectives_within_passage) ... ok
+test_groq_client_uses_server_key_and_expected_model (__main__.ContextCompressorPipelineTests.test_groq_client_uses_server_key_and_expected_model) ... ok
+test_missing_groq_usage_is_not_replaced_with_word_estimate (__main__.ContextCompressorPipelineTests.test_missing_groq_usage_is_not_replaced_with_word_estimate) ... ok
+test_pairwise_scorer_promotes_conditional_followup (__main__.ContextCompressorPipelineTests.test_pairwise_scorer_promotes_conditional_followup) ... ok
+test_pairwise_scorer_supports_legacy_single_only_scorers (__main__.ContextCompressorPipelineTests.test_pairwise_scorer_supports_legacy_single_only_scorers) ... ok
+test_query_complexity_adapts_threshold_and_budget (__main__.ContextCompressorPipelineTests.test_query_complexity_adapts_threshold_and_budget) ... ok
+test_relevance_scoring_prefers_relevant_text (__main__.ContextCompressorPipelineTests.test_relevance_scoring_prefers_relevant_text) ... ok
+test_sentence_audit_assigns_one_group_to_preserved_antecedent (__main__.ContextCompressorPipelineTests.test_sentence_audit_assigns_one_group_to_preserved_antecedent) ... ok
+test_sentence_audit_covers_retained_and_discarded_candidates (__main__.ContextCompressorPipelineTests.test_sentence_audit_covers_retained_and_discarded_candidates) ... ok
+test_sentence_splitter_basic (__main__.ContextCompressorPipelineTests.test_sentence_splitter_basic) ... ok
+test_single_logit_cross_encoder_scores_are_monotonic (__main__.ContextCompressorPipelineTests.test_single_logit_cross_encoder_scores_are_monotonic) ... skipped 'PyTorch is unavailable.'
+test_upload_endpoint_extracts_text_files_and_pdf_pages (__main__.ContextCompressorPipelineTests.test_upload_endpoint_extracts_text_files_and_pdf_pages) ... ok
+
+----------------------------------------------------------------------
+Ran 24 tests in 0.198s
+
+OK (skipped=1)
+
+Summary: 24 tests run, 0 failed, 0 errors, 1 skipped
+Status: PASS

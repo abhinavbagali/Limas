@@ -1,0 +1,732 @@
+. Overall visual style
+
+
+
+
+Style: monochrome white/black/gray interface with restrained emerald and muted cyan accents.
+
+
+Light mode: near-white page, white panels, charcoal text.
+
+
+Dark mode: charcoal page, slightly lighter panels, near-white text.
+
+
+Layout: one scrolling page with a sticky navigation bar.
+
+
+Sections: overview, compression playground, analytics, architecture, footer.
+
+
+Icons: outlined icons from Lucide React.
+
+
+No purple: the token named --violet is actually neutral gray; its name does not reflect a purple color.
+
+
+
+
+2. Colors used
+
+
+
+These are the exact CSS values. OKLCH is supported by modern browsers; you can use these directly without converting them to HEX.
+
+
+
+Main palette
+
+
+CSS variable	Used for	Light mode	Dark mode
+--background	Page and input backgrounds	oklch(.977 0 0)	oklch(.145 0 0)
+--foreground	Main text	oklch(.205 0 0)	oklch(.95 0 0)
+--card	Panels, cards, dialogs	oklch(1 0 0)	oklch(.195 0 0)
+--primary	Main buttons, active navigation, emphasis	oklch(.225 0 0)	oklch(.94 0 0)
+--primary-foreground	Text/icons on primary buttons	oklch(.99 0 0)	oklch(.18 0 0)
+--secondary	Muted surfaces and tabs	oklch(.952 0 0)	oklch(.245 0 0)
+--muted-foreground	Supporting text and labels	oklch(.525 0 0)	oklch(.685 0 0)
+--accent	Secondary hover backgrounds	oklch(.934 0 0)	oklch(.285 0 0)
+--border	Borders and dividers	oklch(.895 0 0)	oklch(.32 0 0)
+--emerald	Savings, success, status dots	oklch(.55 .12 165)	oklch(.75 .115 165)
+--cyan	Latency chart and selected icons	oklch(.52 .065 205)	oklch(.735 .065 205)
+--violet	Neutral architecture/metric accent	oklch(.49 0 0)	oklch(.73 0 0)
+--destructive	Available error-button color	oklch(.6 .2 25)	Inherits light value
+
+
+
+--popover uses --card. Card text uses --foreground; input borders use --border; focus rings use --primary.
+
+
+
+Soft surfaces and chart colors
+
+
+Variable	Light mode	Dark mode
+--soft-primary	oklch(.948 0 0)	oklch(.258 0 0)
+--soft-emerald	oklch(.959 .022 165)	oklch(.255 .032 165)
+--soft-cyan	oklch(.955 .014 205)	oklch(.255 .02 205)
+--soft-violet	oklch(.944 0 0)	oklch(.255 0 0)
+--chart-baseline	oklch(.82 0 0)	oklch(.4 0 0)
+--particle	oklch(.5 0 0 / .2)	oklch(.6 0 0 / .24)
+--nav-bg	oklch(1 0 0 / .92)	oklch(.16 0 0 / .92)
+
+
+Heatmap colors
+
+
+Level	Light mode	Dark mode
+0	oklch(.942 0 0)	oklch(.29 0 0)
+1	oklch(.876 .033 165)	oklch(.35 .032 165)
+2	oklch(.766 .057 165)	oklch(.46 .055 165)
+3	oklch(.644 .084 165)	oklch(.59 .08 165)
+4	oklch(.497 .095 165)	oklch(.72 .10 165)
+
+
+Color mixing
+
+
+
+
+Configuration panel: 38% secondary + card.
+
+
+Result metric strip: 45% secondary + card.
+
+
+Compressed-result border: 25% emerald + border.
+
+
+Compressor-node border: 50% primary + border.
+
+
+Status-dot halo: 8% emerald + transparent.
+
+
+Dialog backdrop: 30% foreground + transparent.
+
+
+Hero background: linear-gradient(180deg, var(--card), var(--background)) — a subtle neutral fade, not a colored gradient.
+
+
+
+
+3. Fonts and text styles
+
+
+Font families
+
+
+
+
+Main font: Plus Jakarta Sans, fallback sans-serif.
+
+
+Code and technical values: JetBrains Mono, fallback monospace.
+
+
+Loaded main-font weights: 400, 500, 600, 700, 800.
+
+
+Loaded monospace weights: 400, 500.
+
+
+Base body size: 13px.
+
+
+Base letter spacing: 0. Small uppercase labels use additional spacing.
+
+
+
+
+
+Font loading URL:
+
+
+
+https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap
+
+
+
+Desktop typography
+
+
+Element	Size / weight	Additional styling
+Brand name	23px / 800	Line height 1.05
+Brand subtitle	7px / 600	Uppercase, 1.5px spacing
+Navigation links	11px / 600	Muted; primary when active
+Hero headline	52px / 800	Line height 1.17
+Hero supporting text	14px / 400	Line height 1.85, muted
+Hero eyebrow	8px / 700	1.15px spacing
+Hero proof labels	10px	Muted, green icons
+Section titles	25px / 800	Line height 1.3
+Section descriptions	11px	Line height 1.7, muted
+Section eyebrows	8px / 700	1.5px spacing
+Panel titles	11px / 700	Icons beside text
+Feature labels	10px / 600	Line height 1.6
+Feature descriptions	8px	Muted
+Input labels	10px / 600	Metadata aligned right
+Text inputs	10px / 400	Line height 1.8
+Context textarea	9px, monospace	Line height 1.85
+Result text	9px, monospace	Line height 1.9
+Metric labels	9px	Muted
+Large metric values	32px / 700	Line height 1
+Metric units	16px / 500	Muted; “edges” uses 12px
+Chart headings	12px / 700	Descriptions use 8px
+Architecture titles	10px	Line height 1.65; long words wrap
+Architecture filenames	6px, monospace	Muted; long names wrap
+Architecture descriptions	9px	Line height 1.8
+Dialog heading	21px	Long titles wrap
+Dialog description	12px	Line height 1.9
+Footer text	7–12px	Muted except brand
+
+
+
+Responsive headline sizes: 58px at widths ≥1500px; 52px normally; 41px at ≤800px; 33px at ≤560px.
+
+
+
+4. Borders, corners, shadows, and blur
+
+
+Borders
+
+
+
+
+Standard border: 1px solid var(--border).
+
+
+Active navigation underline: 2px, primary color.
+
+
+Selected pipeline node: 2px primary outline, 3px offset.
+
+
+Focused input: primary border plus 0 0 0 2px var(--soft-primary).
+
+
+Focused heatmap cell: 2px primary outline, 1px offset.
+
+
+Shared buttons: 1px focus-visible ring.
+
+
+Dividers: 1px top, bottom, or side borders depending on the section.
+
+
+
+
+Border radii
+
+
+Element	Radius
+Standard buttons	6px
+Main workspace	8px
+Pipeline nodes	7px
+Results, statistics, charts	7px
+Architecture cards	6px
+Inputs and selects	5px
+Segmented-control container	6px
+Dialog	8px
+Small badges	3–5px
+Heatmap cells	2px
+Brand icon background	9px
+Hero eyebrow pill	30px
+Toggle track	20px
+Toggle thumb and status dots	50%
+
+
+Shadows
+
+
+--shadow-card: 0 4px 15px -6px oklch(.2 0 0 / .09);
+--shadow-engine: 0 8px 25px -8px oklch(.2 0 0 / .17);
+
+
+
+
+The shared button also supplies Tailwind’s standard shadow or shadow-sm, depending on its variant.
+
+
+
+Blur and layers
+
+
+
+
+Sticky navigation: backdrop-filter: blur(18px); z-index 40.
+
+
+Dialog backdrop: backdrop-filter: blur(4px); z-index 60.
+
+
+Heatmap tooltip: z-index 20.
+
+
+
+
+5. Layout and spacing
+
+
+Page structure
+
+
+
+
+Global box-sizing: border-box.
+
+
+Body margin: 0.
+
+
+App minimum height: 100vh.
+
+
+Desktop navigation: 78px high, max width 1320px, horizontal padding 44px.
+
+
+Hero padding: 52px 44px 38px.
+
+
+Main content: max width 1240px, centered, horizontal padding 44px.
+
+
+Normal section top spacing: 43px.
+
+
+Analytics and architecture top spacing: 55px.
+
+
+Section scroll offset: 97px; overview offset: 80px.
+
+
+
+
+Pipeline
+
+
+
+
+Max width: 1152px.
+
+
+Grid columns: 1fr 1fr 1.24fr 1fr 1fr.
+
+
+Gap: 34px.
+
+
+Node height: 137px.
+
+
+Node padding: 15px 8px.
+
+
+Central compressor node is wider and visually emphasized.
+
+
+
+
+Playground
+
+
+
+
+Main grid: 282px minmax(0, 1fr).
+
+
+Configuration column separated by a right border.
+
+
+Panel title bars: 57px high.
+
+
+Configuration and input padding: 20px.
+
+
+Text-input padding: 11px 12px.
+
+
+Textarea height: 211px, vertically resizable.
+
+
+Results grid: two equal columns, 18px gap.
+
+
+Result title bar: 50px high.
+
+
+Result text: minimum 145px, maximum 270px, scrolls when needed.
+
+
+
+
+Analytics
+
+
+
+
+Statistics: four equal columns, 17px gap, 19px card padding.
+
+
+Main charts: 1.65fr 1fr, 20px gap.
+
+
+Secondary charts: two equal columns, 20px gap.
+
+
+Main chart area height: 222px.
+
+
+Radar area: 205px high, 58% width on desktop.
+
+
+Donut area: 165px high, 46% width on desktop.
+
+
+Heatmap: 7 rows × 15 columns, 4px gap, square cells.
+
+
+
+
+Architecture and dialogs
+
+
+
+
+Architecture: four equal columns, 17px gap.
+
+
+Card padding: 18px 17px 0.
+
+
+Icon background: 35 × 35px.
+
+
+Dialog: 480px wide, capped at 100%, 32px padding.
+
+
+
+
+6. Buttons and controls
+
+
+Shared button styling
+
+
+
+
+Inline flex; centered content.
+
+
+Icon/text gap: 8px.
+
+
+Default font: 14px / 500, overridden by page-specific styles.
+
+
+Default height: 36px.
+
+
+Small height: 32px.
+
+
+Large height: 40px.
+
+
+Icon button: 36 × 36px.
+
+
+Default icon size: 16px.
+
+
+Disabled controls: 50% opacity, no pointer interaction.
+
+
+
+
+Variants used
+
+
+
+
+Primary: primary background, contrasting text; hover uses primary at 90% opacity.
+
+
+Outline: 1px border, page background; accent background on hover.
+
+
+Ghost: transparent normally; accent background on hover.
+
+
+
+
+Page-specific sizes
+
+
+
+
+Hero buttons: 42px high, 11px text, 20px horizontal padding.
+
+
+Run comparison button: 37px high, 10px text.
+
+
+GitHub button: 33px high, 11px text.
+
+
+Result copy buttons: 25 × 25px.
+
+
+Tabs: 26px high, 9px text.
+
+
+
+
+Toggles and sliders
+
+
+
+
+Toggle track: 29 × 17px.
+
+
+Toggle thumb: 13 × 13px.
+
+
+Enabled toggle: primary background.
+
+
+Enabled thumb movement: 12px horizontally.
+
+
+Slider height: 4px; primary accent color.
+
+
+Disabled slider group: 55% opacity.
+
+
+Threshold range: 0.10–1.00, step 0.05.
+
+
+Top-K range: 1–10, step 1.
+
+
+Token budget range: 64–1024, step 32.
+
+
+
+
+7. Transitions and hover effects
+
+
+Interaction	Properties	Duration
+Light/dark switch	Background and text color	200ms
+Toggle thumb	Transform	200ms
+Architecture card	Transform and border color	200ms normally
+Shared buttons	Color/background/border changes	Tailwind default: 150ms
+Scroll reveal	Opacity and transform	700ms
+
+
+
+
+Pipeline nodes lift 3px and get a primary border on hover.
+
+
+Architecture cards lift 3px and get a primary border on hover.
+
+
+Revealed architecture cards inherit the 700ms reveal transition, which can make their hover lift slower than the normal 200ms rule.
+
+
+Selected tabs use a white/charcoal card surface and subtle shadow.
+
+
+Heatmap tooltips appear on hover or keyboard focus; they do not fade in.
+
+
+Inputs show their primary focus border/ring immediately.
+
+
+
+
+8. Animations used
+
+
+One-time scroll reveal
+
+
+.scroll-reveal {
+  opacity: 0;
+  transform: translate3d(0, 22px, 0);
+  transition:
+    opacity .7s cubic-bezier(.22, 1, .36, 1),
+    transform .7s cubic-bezier(.22, 1, .36, 1);
+  transition-delay: var(--reveal-delay, 0ms);
+}
+
+.scroll-reveal.is-revealed {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+
+
+
+
+
+Stagger delays: 0, 75, 150, 225, 300ms.
+
+
+Trigger: IntersectionObserver with 0.08 threshold.
+
+
+Observer margin: 0px 0px -30px 0px.
+
+
+Each element reveals once, then stops being observed.
+
+
+Applied to hero content, pipeline labels/nodes, section headings, workspace, result headings/panels, statistic cards, chart panels, and architecture cards.
+
+
+
+
+Hero particles
+
+
+
+
+Canvas contains 65 particles.
+
+
+Radius: 1px, or 1.6px for every fourth particle.
+
+
+Color: --particle.
+
+
+Vertical movement: Math.sin(frame / 130 + i) * 5.
+
+
+Render loop: requestAnimationFrame.
+
+
+Canvas is behind content and ignores pointer events.
+
+
+
+
+Other movement
+
+
+
+
+Navigation uses browser smooth scrolling; no custom duration is specified.
+
+
+Loading icon uses Tailwind animate-spin: 1-second linear rotation, repeating.
+
+
+Radar and donut chart animations are explicitly disabled.
+
+
+Bar and line charts retain Recharts’ default animation behavior.
+
+
+The large metric numbers are static, not animated counters.
+
+
+
+
+Reduced-motion support
+
+
+
+
+CSS animations and transitions are disabled when prefers-reduced-motion: reduce is enabled.
+
+
+Scroll navigation becomes instant.
+
+
+Scroll-reveal elements remain visible.
+
+
+Particle canvas draws once instead of continuously moving.
+
+
+Recharts’ JavaScript bar/line animations are not explicitly connected to this setting.
+
+
+
+
+9. Responsive rules
+
+
+Width	Main changes
+≥1500px	Wider containers, 58px headline, 148px pipeline nodes
+≤1100px	28px page gutters, 260px configuration column, denser navigation
+≤800px	20px gutters, 66px navigation, 41px headline, main charts stack, architecture becomes two columns
+≤560px	17px content gutters, 61px navigation, 33px headline, playground and results stack, statistics become two columns, all chart panels stack
+
+
+
+On small screens, the central pipeline node spans both columns; architecture remains two columns. Some navigation items, secondary text, and the GitHub button are hidden to save space.
+
+
+
+10. Libraries and files needed locally
+
+
+Main libraries
+
+
+
+
+React 19 — interface and state.
+
+
+TanStack Start / TanStack Router — app shell and routing.
+
+
+Tailwind CSS 4 — utilities and semantic tokens.
+
+
+Lucide React — icons.
+
+
+Recharts — bar/line, radar, and donut charts.
+
+
+Radix Slot — shared button composition.
+
+
+class-variance-authority — button variants.
+
+
+clsx + tailwind-merge — combining classes.
+
+
+tw-animate-css — imported animation utilities.
+
+
+
+
+
+Use the included package.json and bun.lock for the complete dependency list and pinned versions.
+
+
+
+Styling and interface files
+
+
+File	Purpose
+src/styles.css	Exact colors, typography, sizes, borders, layouts, responsive rules, reveal transitions
+src/routes/__root.tsx	Loads the stylesheet and fonts
+src/routes/index.tsx	Navigation, hero, pipeline, architecture, footer, dialogs, theme toggle
+src/components/compressor/Playground.tsx	Inputs, toggles, sliders, result panels
+src/components/compressor/Analytics.tsx	Metric cards, charts, heatmap, CSV export
+src/components/compressor/ParticleField.tsx	Animated particle canvas
+src/hooks/use-scroll-reveal.ts	One-time scroll animation trigger
+src/components/ui/button.tsx	Shared button appearance and states
+src/lib/compression-demo.ts	Local scenarios and compression simulation

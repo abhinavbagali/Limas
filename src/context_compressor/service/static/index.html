@@ -1,0 +1,1175 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f8fafc">
+  <meta name="description" content="Explore token-aware semantic context compression for retrieval-augmented generation pipelines.">
+  <title>Limas — Subcortical Context Compressor</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700;800&display=swap');
+    :root {
+      color-scheme: light;
+      --bg: #f7f8fc; --surface: rgba(255,255,255,.92); --surface-solid: #fff;
+      --ink: #101828; --muted: #667085; --subtle: #98a2b3; --line: #e7eaf1;
+      --soft: #f4f5fa; --indigo: #5145e5; --indigo-2: #796df4; --indigo-soft: #f0efff;
+      --mint: #0e9f76; --mint-soft: #e9f8f2; --cyan: #0785b5; --cyan-soft: #e9f7fc;
+      --purple: #9254de; --amber: #b7791f; --amber-soft: #fff7e8; --red: #c24151;
+      --shadow: 0 16px 42px -23px rgba(24,35,66,.22), 0 2px 8px rgba(24,35,66,.035);
+      --radius: 18px; --mono: "DM Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-family: "DM Sans", Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      scroll-behavior: smooth;
+    }
+    :root[data-theme="dark"] {
+      color-scheme: dark; --bg: #0b0f19; --surface: rgba(20,27,43,.94); --surface-solid: #141b2b;
+      --ink: #f4f6fb; --muted: #a4aec1; --subtle: #79869e; --line: #273149;
+      --soft: #111827; --indigo: #948bff; --indigo-2: #b1aaff; --indigo-soft: #242344;
+      --mint: #55d7aa; --mint-soft: #15372f; --cyan: #4dc4ec; --cyan-soft: #142e3a;
+      --purple: #c296ff; --amber: #f0c574; --amber-soft: #352b1b; --red: #ff8997;
+      --shadow: 0 16px 42px -23px rgba(0,0,0,.7), 0 0 0 1px rgba(99,102,241,.035);
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 0; background: var(--bg); color: var(--ink); transition: color .2s, background .2s; }
+    body, button, input, textarea, select { font-family: inherit; }
+    button, input, textarea, select { font-size: inherit; }
+    button { color: inherit; }
+    a { color: inherit; text-decoration: none; }
+    button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid color-mix(in srgb, var(--indigo) 40%, transparent); outline-offset: 2px; }
+    .wrap { width: min(1240px, calc(100% - 48px)); margin: 0 auto; }
+    .topbar { position: sticky; top: 0; z-index: 20; border-bottom: 1px solid color-mix(in srgb, var(--line) 75%, transparent); background: color-mix(in srgb, var(--bg) 83%, transparent); backdrop-filter: blur(18px); }
+    .nav { min-height: 70px; display: flex; align-items: center; gap: 24px; }
+    .brand { display: flex; min-width: 230px; align-items: center; gap: 11px; }
+    .brand-mark { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 12px; color: #fff; background: linear-gradient(145deg,#7166f2,#4035ca); box-shadow: 0 7px 18px #5145e533; }
+    .brand-mark svg { width: 22px; height: 22px; }
+    .brand-name { font-size: 13px; font-weight: 800; letter-spacing: -.35px; line-height: 1.25; }
+    .brand-caption { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; font-weight: 600; }
+    .nav-links { display: flex; align-items: center; justify-content: center; flex: 1; gap: 25px; }
+    .nav-links a { color: var(--muted); font-size: 11px; font-weight: 700; transition: color .18s; }
+    .nav-links a:hover, .nav-links a.active { color: var(--indigo); }
+    .nav-actions { display: flex; align-items: center; gap: 9px; }
+    .service { display: inline-flex; align-items: center; gap: 7px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--muted); font-size: 9px; font-weight: 700; white-space: nowrap; }
+    .service-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 0 3px color-mix(in srgb, var(--amber) 13%, transparent); }
+    .service.online .service-dot { background: var(--mint); box-shadow: 0 0 0 3px color-mix(in srgb, var(--mint) 15%, transparent); }
+    .service.offline .service-dot { background: var(--red); }
+    .icon-btn, .github-btn { height: 35px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--muted); cursor: pointer; font-size: 10px; font-weight: 750; transition: transform .18s, border-color .18s, color .18s; }
+    .icon-btn:hover, .github-btn:hover { transform: translateY(-1px); border-color: var(--indigo); color: var(--indigo); }
+    .github-btn svg { width: 14px; height: 14px; }
+    main { overflow: hidden; }
+    .hero { position: relative; min-height: 450px; display: grid; grid-template-columns: 1.04fr .96fr; align-items: center; gap: 46px; padding: 74px 0 66px; }
+    .hero::before { position: absolute; z-index: -1; top: 5%; left: 0; width: 58%; height: 92%; border-radius: 50%; background: radial-gradient(ellipse, color-mix(in srgb, var(--indigo) 10%, transparent), transparent 68%); content: ""; filter: blur(25px); }
+    #particle-canvas { position: absolute; z-index: -1; inset: 0; width: 100%; height: 100%; opacity: .5; pointer-events: none; }
+    .eyebrow { display: inline-flex; align-items: center; gap: 8px; color: var(--indigo); font-size: 10px; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }
+    .eyebrow-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 10px var(--mint); }
+    h1 { max-width: 670px; margin: 17px 0 15px; font-size: clamp(37px, 5.2vw, 64px); letter-spacing: -.064em; line-height: 1.01; }
+    h1 em { color: var(--indigo); font-style: normal; }
+    .hero-copy { max-width: 570px; margin: 0; color: var(--muted); font-size: 14px; line-height: 1.8; }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
+    .button-primary, .button-secondary { min-height: 42px; display: inline-flex; align-items: center; justify-content: center; gap: 9px; padding: 0 16px; border: 1px solid transparent; border-radius: 11px; cursor: pointer; font-size: 11px; font-weight: 800; transition: transform .18s, box-shadow .18s; }
+    .button-primary { color: white; background: linear-gradient(115deg,#6357ef,#4437cf); box-shadow: 0 9px 23px #5145e52a; }
+    .button-primary:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 13px 27px #5145e545; }
+    .button-secondary { border-color: var(--line); background: var(--surface); color: var(--ink); }
+    .button-secondary:hover { transform: translateY(-2px); }
+    .button-primary svg, .button-secondary svg { width: 15px; height: 15px; }
+    .hero-footnote { display: flex; align-items: center; gap: 8px; margin-top: 19px; color: var(--subtle); font-size: 9px; }
+    .hero-footnote svg { width: 13px; height: 13px; color: var(--mint); }
+    .flow-card { position: relative; padding: 21px; border: 1px solid color-mix(in srgb, var(--indigo) 15%, var(--line)); border-radius: 20px; background: color-mix(in srgb, var(--surface) 90%, transparent); box-shadow: var(--shadow); backdrop-filter: blur(14px); }
+    .flow-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
+    .flow-card-head strong { display: block; font-size: 12px; }
+    .flow-card-head span { display: block; margin-top: 4px; color: var(--muted); font-size: 9px; }
+    .live-tag { display: flex; align-items: center; gap: 6px; color: var(--mint); font-family: var(--mono); font-size: 9px; }
+    .live-tag::before { width: 6px; height: 6px; border-radius: 50%; background: currentColor; content: ""; box-shadow: 0 0 10px currentColor; }
+    .pipeline { display: grid; grid-template-columns: 1fr 20px 1fr 20px 1fr; grid-template-rows: auto 22px auto; align-items: center; gap: 8px 4px; }
+    .flow-node { min-height: 66px; display: grid; justify-items: center; align-content: center; gap: 7px; padding: 8px 5px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-solid); text-align: center; }
+    .flow-node:nth-of-type(3) { border-color: color-mix(in srgb, var(--indigo) 32%, var(--line)); background: var(--indigo-soft); }
+    .flow-node:nth-of-type(5) { border-color: color-mix(in srgb, var(--mint) 35%, var(--line)); background: var(--mint-soft); }
+    .flow-node svg { width: 17px; height: 17px; color: var(--indigo); }
+    .flow-node:nth-of-type(5) svg { color: var(--mint); }
+    .flow-node b { font-size: 8px; line-height: 1.3; }
+    .flow-arrow { color: var(--subtle); text-align: center; font-size: 15px; }
+    .flow-node.answer { grid-column: 3; grid-row: 3; border-color: color-mix(in srgb, var(--cyan) 30%, var(--line)); background: var(--cyan-soft); }
+    .flow-node.answer svg { color: var(--cyan); }
+    .flow-node.llm { grid-column: 5; grid-row: 3; }
+    .flow-arrow.a1 { grid-column: 2; grid-row: 1; }
+    .flow-arrow.a2 { grid-column: 4; grid-row: 1; }
+    .flow-arrow.a3 { grid-column: 4; grid-row: 3; }
+    .flow-arrow.a-down { grid-column: 5; grid-row: 2; }
+    .flow-node.query { grid-column: 1; grid-row: 1; }
+    .flow-node.passages { grid-column: 3; grid-row: 1; }
+    .flow-node.compressor { grid-column: 5; grid-row: 1; }
+    .flow-node.llm { grid-column: 3; grid-row: 3; }
+    .flow-node.answer { grid-column: 1; grid-row: 3; }
+    .flow-arrow.a3 { grid-column: 4; grid-row: 3; transform: rotate(180deg); }
+    .flow-caption { display: flex; justify-content: space-between; margin-top: 17px; padding-top: 13px; border-top: 1px solid var(--line); color: var(--muted); font-family: var(--mono); font-size: 8px; }
+    .flow-caption strong { color: var(--mint); font-weight: 500; }
+    .section { padding: 52px 0; scroll-margin-top: 82px; }
+    .section-heading { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 22px; }
+    .section-heading h2 { margin: 7px 0 0; font-size: clamp(23px,3vw,31px); letter-spacing: -.045em; line-height: 1.13; }
+    .section-heading p { max-width: 490px; margin: 8px 0 0; color: var(--muted); font-size: 11px; line-height: 1.65; }
+    .section-kicker { color: var(--indigo); font-size: 9px; font-weight: 850; letter-spacing: .12em; text-transform: uppercase; }
+    .surface { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); }
+    .playground-layout { display: grid; grid-template-columns: minmax(270px,.82fr) minmax(0,1.18fr); gap: 16px; align-items: start; }
+    .input-card { padding: 19px; }
+    .card-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 17px; }
+    .card-title h3 { margin: 0; font-size: 13px; letter-spacing: -.02em; }
+    .card-title p { margin: 5px 0 0; color: var(--muted); font-size: 9px; line-height: 1.5; }
+    .input-field { margin: 0 0 13px; }
+    .label-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+    .label-row label, .field-label { font-size: 10px; font-weight: 750; }
+    .hint { color: var(--subtle); font-size: 8px; }
+    input[type="text"], textarea, select { width: 100%; border: 1px solid var(--line); border-radius: 9px; outline: none; color: var(--ink); background: var(--surface-solid); font-size: 10px; transition: border-color .18s, box-shadow .18s; }
+    input[type="text"], select { min-height: 36px; padding: 0 10px; }
+    textarea { min-height: 104px; padding: 10px; resize: vertical; line-height: 1.55; }
+    input:focus, textarea:focus, select:focus { border-color: var(--indigo-2); box-shadow: 0 0 0 3px color-mix(in srgb, var(--indigo) 12%, transparent); }
+    select:disabled, input:disabled { opacity: .48; cursor: not-allowed; }
+    .case-row { display: grid; grid-template-columns: 1fr auto; gap: 7px; }
+    .case-save { padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--soft); color: var(--muted); cursor: pointer; font-size: 9px; font-weight: 750; }
+    .control-box { margin: 15px 0; padding: 13px; border: 1px solid var(--line); border-radius: 12px; background: color-mix(in srgb, var(--soft) 72%, var(--surface-solid)); }
+    .control-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 11px; }
+    .control-head strong { font-size: 10px; }
+    .control-head span { color: var(--subtle); font-size: 8px; }
+    .switch-list { display: grid; gap: 9px; }
+    .switch-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--muted); font-size: 9px; font-weight: 600; }
+    .switch-row input { position: absolute; opacity: 0; pointer-events: none; }
+    .switch { width: 29px; height: 17px; flex: 0 0 auto; position: relative; border-radius: 99px; background: #c6ccda; cursor: pointer; transition: background .18s; }
+    .switch::after { position: absolute; top: 3px; left: 3px; width: 11px; height: 11px; border-radius: 50%; background: white; content: ""; transition: transform .18s; }
+    .switch-row input:checked + .switch { background: var(--indigo); }
+    .switch-row input:checked + .switch::after { transform: translateX(12px); }
+    .switch-row input:focus-visible + .switch { outline: 3px solid color-mix(in srgb, var(--indigo) 40%, transparent); outline-offset: 2px; }
+    .sliders { display: grid; gap: 12px; margin-top: 13px; padding-top: 12px; border-top: 1px solid var(--line); }
+    .range-label { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 5px; color: var(--muted); font-size: 8px; }
+    .range-label output { color: var(--indigo); font-family: var(--mono); font-weight: 500; }
+    input[type="range"] { width: 100%; height: 4px; display: block; margin: 6px 0 1px; appearance: none; border-radius: 99px; background: color-mix(in srgb, var(--indigo) 22%, var(--line)); cursor: pointer; }
+    input[type="range"]::-webkit-slider-thumb { width: 13px; height: 13px; appearance: none; border: 2px solid var(--surface-solid); border-radius: 50%; background: var(--indigo); box-shadow: 0 0 0 1px var(--indigo); }
+    input[type="range"]::-moz-range-thumb { width: 10px; height: 10px; border: 2px solid var(--surface-solid); border-radius: 50%; background: var(--indigo); box-shadow: 0 0 0 1px var(--indigo); }
+    .reference-note { display: flex; gap: 7px; align-items: flex-start; margin: 8px 0 0; color: var(--subtle); font-size: 8px; line-height: 1.5; }
+    .reference-note svg { width: 12px; height: 12px; flex: 0 0 auto; color: var(--cyan); }
+    .run-button { width: 100%; min-height: 43px; position: relative; isolation: isolate; overflow: hidden; border: 0; border-radius: 11px; color: white; background: linear-gradient(110deg,#5a4bea,#3428b6); cursor: pointer; font-size: 10px; font-weight: 800; box-shadow: 0 8px 20px #5145e52a; }
+    .run-button::before { position: absolute; z-index: -1; inset: -2px; border-radius: inherit; background: linear-gradient(100deg,#9f75ff,#36d7ad,#70a4ff,#9f75ff); background-size: 300% 100%; content: ""; animation: border-flow 4s linear infinite; }
+    .run-button::after { position: absolute; z-index: -1; inset: 2px; border-radius: 9px; background: linear-gradient(110deg,#5a4bea,#3428b6); content: ""; }
+    .run-button:disabled { opacity: .7; cursor: wait; }
+    .run-actions { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 9px; }
+    .compress-only { min-height: 43px; padding: 0 13px; border: 1px solid var(--line); border-radius: 10px; color: var(--indigo); background: var(--surface-solid); cursor: pointer; font-size: 9px; font-weight: 800; white-space: nowrap; }
+    .compress-only:hover { border-color: var(--indigo); background: var(--indigo-soft); }
+    .compress-only:disabled { opacity: .6; cursor: wait; }
+    .upload-dropzone { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 8px; padding: 11px 13px; border: 1px dashed color-mix(in srgb, var(--indigo) 40%, var(--line)); border-radius: 10px; color: var(--muted); background: color-mix(in srgb, var(--indigo-soft) 42%, var(--surface-solid)); cursor: pointer; font-size: 9px; transition: border-color .18s, background .18s; }
+    .upload-dropzone.dragover { border-color: var(--indigo); background: var(--indigo-soft); }
+    .upload-dropzone strong { color: var(--ink); }
+    .upload-dropzone small { display: block; margin-top: 3px; color: var(--subtle); font-size: 8px; }
+    .upload-dropzone button { padding: 6px 9px; border: 1px solid var(--line); border-radius: 7px; color: var(--indigo); background: var(--surface-solid); font-size: 8px; font-weight: 750; white-space: nowrap; }
+    .upload-status { min-height: 15px; margin: 5px 0 0; color: var(--muted); font-size: 8px; }
+    .upload-status.error { color: var(--red); }
+    .chart-empty { fill: var(--muted); font-size: 13px; }
+    @keyframes border-flow { to { background-position: 300% 0; } }
+    .error-message { display: none; margin: 10px 0 0; color: var(--red); font-size: 9px; line-height: 1.5; }
+    .error-message.visible { display: block; }
+    .save-message { min-height: 13px; margin: 8px 0 0; color: var(--muted); font-size: 8px; }
+    .results-column { display: grid; gap: 14px; }
+    .result-card { padding: 18px; }
+    .result-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+    .result-head h3 { margin: 0; font-size: 13px; }
+    .result-head p { margin: 5px 0 0; color: var(--muted); font-size: 9px; }
+    .model-badge, .status-badge { display: inline-flex; align-items: center; gap: 6px; max-width: 210px; padding: 6px 9px; overflow: hidden; border: 1px solid var(--line); border-radius: 99px; color: var(--muted); background: var(--soft); font-family: var(--mono); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+    .status-badge::before { width: 6px; height: 6px; flex: 0 0 auto; border-radius: 50%; background: var(--subtle); content: ""; }
+    .status-badge.done::before { background: var(--mint); }
+    .result-tabs { display: flex; gap: 5px; padding: 4px; border: 1px solid var(--line); border-radius: 11px; background: var(--soft); }
+    .result-tab { flex: 1; min-height: 32px; border: 0; border-radius: 8px; color: var(--muted); background: transparent; cursor: pointer; font-size: 9px; font-weight: 750; }
+    .result-tab[aria-selected="true"] { color: var(--indigo); background: var(--surface-solid); box-shadow: 0 2px 6px #19223a12; }
+    .result-panel { display: none; padding-top: 14px; }
+    .result-panel.active { display: block; animation: fade-in .24s ease both; }
+    @keyframes fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+    .mini-flow { display: flex; justify-content: space-between; gap: 5px; margin-bottom: 13px; }
+    .mini-step { display: flex; flex: 1; align-items: center; gap: 5px; color: var(--subtle); font-size: 8px; }
+    .mini-step i { width: 19px; height: 19px; display: grid; place-items: center; flex: 0 0 auto; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); background: var(--surface-solid); font-size: 8px; font-style: normal; }
+    .mini-step.done i { border-color: color-mix(in srgb, var(--mint) 32%, var(--line)); color: var(--mint); background: var(--mint-soft); }
+    .context-panel { padding: 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--soft); }
+    .panel-label { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; color: var(--muted); font-size: 8px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+    .context-content { max-height: 126px; overflow: auto; color: var(--muted); font-size: 9px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .context-content .retained { padding: 1px 2px; border-radius: 3px; color: var(--mint); background: color-mix(in srgb, var(--mint) 12%, transparent); }
+    .context-content .pruned { color: var(--subtle); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--red) 45%, transparent); opacity: .56; }
+    .answer-box { min-height: 77px; margin-top: 10px; padding: 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-solid); }
+    .answer-box p { margin: 7px 0 0; color: var(--ink); font-size: 10px; line-height: 1.65; white-space: pre-wrap; }
+    .answer-box p.placeholder { color: var(--subtle); font-style: italic; }
+    .result-metrics { display: grid; grid-template-columns: repeat(3,1fr); gap: 7px; margin-top: 10px; }
+    .result-metric { min-width: 0; padding: 9px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-solid); }
+    .result-metric b { display: block; overflow: hidden; font-size: 14px; letter-spacing: -.04em; text-overflow: ellipsis; white-space: nowrap; }
+    .result-metric span { display: block; margin-top: 3px; color: var(--muted); font-size: 7px; line-height: 1.4; }
+    .diff-banner { display: grid; grid-template-columns: 1.25fr .75fr; gap: 10px; align-items: center; margin-top: 13px; padding: 12px; border: 1px solid color-mix(in srgb, var(--mint) 25%, var(--line)); border-radius: 11px; background: var(--mint-soft); }
+    .diff-banner strong { display: block; color: var(--mint); font-size: 11px; }
+    .diff-banner span { display: block; margin-top: 4px; color: var(--muted); font-size: 8px; line-height: 1.4; }
+    .diff-value { text-align: right; font-family: var(--mono); font-size: 21px; font-weight: 500; letter-spacing: -.06em; }
+    .diff-value small { display: block; margin-top: 3px; color: var(--muted); font-family: inherit; font-size: 8px; letter-spacing: 0; }
+    .comparison-details { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-top: 11px; }
+    .detail-chip { padding: 9px; border: 1px solid var(--line); border-radius: 9px; }
+    .detail-chip span { display: block; color: var(--muted); font-size: 7px; }
+    .detail-chip b { display: block; margin-top: 4px; font-family: var(--mono); font-size: 9px; font-weight: 500; }
+    .audit-details { margin-top: 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-solid); }
+    .audit-details summary { padding: 10px 11px; color: var(--muted); cursor: pointer; font-size: 9px; font-weight: 750; }
+    .audit-table-wrap { max-height: 300px; overflow: auto; border-top: 1px solid var(--line); }
+    .audit-table { width: 100%; border-collapse: collapse; font-size: 8px; }
+    .audit-table th, .audit-table td { padding: 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    .audit-table th { position: sticky; top: 0; z-index: 1; color: var(--muted); background: var(--soft); font-weight: 750; }
+    .audit-table td.audit-text { min-width: 180px; max-width: 270px; line-height: 1.5; }
+    .audit-table td.audit-reason { min-width: 150px; max-width: 230px; color: var(--muted); line-height: 1.5; }
+    .audit-table .audit-score { font-family: var(--mono); white-space: nowrap; }
+    .audit-table .audit-kept { color: var(--mint); font-weight: 750; white-space: nowrap; }
+    .audit-table .audit-discarded { color: var(--subtle); white-space: nowrap; }
+    .notice { display: flex; align-items: flex-start; gap: 8px; margin-top: 10px; padding: 10px; border: 1px solid color-mix(in srgb, var(--amber) 22%, var(--line)); border-radius: 9px; color: var(--muted); background: var(--amber-soft); font-size: 8px; line-height: 1.5; }
+    .notice svg { width: 13px; height: 13px; flex: 0 0 auto; color: var(--amber); }
+    .analytics { padding-top: 44px; }
+    .sample-label { display: inline-flex; align-items: center; gap: 6px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 99px; color: var(--muted); background: var(--surface); font-size: 8px; font-weight: 700; white-space: nowrap; }
+    .sample-label::before { width: 6px; height: 6px; border-radius: 50%; background: var(--amber); content: ""; }
+    .stats-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; }
+    .stat-card { min-height: 126px; padding: 16px; transition: transform .2s, border-color .2s; }
+    .stat-card:hover { transform: translateY(-3px); border-color: color-mix(in srgb, var(--indigo) 30%, var(--line)); }
+    .stat-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--muted); font-size: 9px; font-weight: 650; }
+    .stat-icon { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 9px; background: var(--indigo-soft); color: var(--indigo); }
+    .stat-icon svg { width: 16px; height: 16px; }
+    .stat-icon.mint { color: var(--mint); background: var(--mint-soft); }
+    .stat-icon.cyan { color: var(--cyan); background: var(--cyan-soft); }
+    .stat-icon.purple { color: var(--purple); background: color-mix(in srgb, var(--purple) 12%, var(--surface-solid)); }
+    .stat-value { margin-top: 13px; font-size: 27px; font-weight: 800; letter-spacing: -.06em; }
+    .stat-value small { margin-left: 3px; color: var(--muted); font-size: 10px; font-weight: 600; letter-spacing: 0; }
+    .stat-foot { display: flex; align-items: center; gap: 5px; margin-top: 3px; color: var(--muted); font-size: 8px; }
+    .stat-foot .up { color: var(--mint); font-weight: 800; }
+    .chart-grid { display: grid; grid-template-columns: 1.16fr .84fr; gap: 13px; margin-top: 14px; }
+    .chart-card { min-width: 0; padding: 17px; }
+    .chart-card.full { grid-column: 1 / -1; }
+    .chart-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+    .chart-head h3 { margin: 0; font-size: 11px; letter-spacing: -.015em; }
+    .chart-head p { margin: 5px 0 0; color: var(--muted); font-size: 8px; }
+    .chart-legend { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; color: var(--muted); font-size: 8px; }
+    .legend-item { display: inline-flex; align-items: center; gap: 5px; }
+    .legend-dot { width: 7px; height: 7px; border-radius: 2px; background: var(--indigo); }
+    .legend-dot.green { background: var(--mint); }
+    .legend-dot.line { width: 13px; height: 2px; border-radius: 0; background: var(--cyan); }
+    .chart-svg { width: 100%; height: auto; display: block; overflow: visible; }
+    .chart-svg text { fill: var(--muted); font-family: "DM Sans",sans-serif; font-size: 8px; }
+    .chart-svg .gridline { stroke: var(--line); stroke-width: 1; }
+    .chart-svg .axis { stroke: var(--line); stroke-width: 1; }
+    .chart-svg .bar-base { fill: #a9a4fa; }
+    .chart-svg .bar-comp { fill: var(--mint); }
+    .chart-svg .latency-line { fill: none; stroke: var(--cyan); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+    .chart-svg .latency-point { fill: var(--surface-solid); stroke: var(--cyan); stroke-width: 2; }
+    .heatmap { display: grid; grid-template-columns: repeat(15,minmax(8px,1fr)); gap: 5px; padding: 8px 0 10px; }
+    .heat-cell { aspect-ratio: 1; min-width: 7px; position: relative; border: 0; border-radius: 4px; background: #e7e9ef; cursor: pointer; transition: transform .16s, outline-color .16s; }
+    :root[data-theme="dark"] .heat-cell { background: #30394c; }
+    .heat-cell:hover, .heat-cell:focus-visible { z-index: 1; transform: scale(1.17); outline: 2px solid var(--indigo); outline-offset: 2px; }
+    .heat-cell[data-level="1"] { background: #c9f2e2; }
+    .heat-cell[data-level="2"] { background: #88e4c1; }
+    .heat-cell[data-level="3"] { background: #3aca99; }
+    .heat-cell[data-level="4"] { background: #078962; }
+    :root[data-theme="dark"] .heat-cell[data-level="1"] { background: #244c40; }
+    :root[data-theme="dark"] .heat-cell[data-level="2"] { background: #267d61; }
+    :root[data-theme="dark"] .heat-cell[data-level="3"] { background: #38b98a; }
+    :root[data-theme="dark"] .heat-cell[data-level="4"] { background: #67e1ad; }
+    .heatmap-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--muted); font-size: 8px; }
+    .heat-legend { display: flex; align-items: center; gap: 4px; }
+    .heat-legend i { width: 9px; height: 9px; border-radius: 2px; background: #e7e9ef; }
+    .heat-legend i:nth-of-type(2) { background: #c9f2e2; } .heat-legend i:nth-of-type(3) { background: #88e4c1; } .heat-legend i:nth-of-type(4) { background: #3aca99; } .heat-legend i:nth-of-type(5) { background: #078962; }
+    :root[data-theme="dark"] .heat-legend i { background: #30394c; }
+    :root[data-theme="dark"] .heat-legend i:nth-of-type(2) { background: #244c40; } :root[data-theme="dark"] .heat-legend i:nth-of-type(3) { background: #267d61; } :root[data-theme="dark"] .heat-legend i:nth-of-type(4) { background: #38b98a; } :root[data-theme="dark"] .heat-legend i:nth-of-type(5) { background: #67e1ad; }
+    .radar-wrap { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 10px; }
+    .radar-legend { display: grid; gap: 9px; color: var(--muted); font-size: 8px; }
+    .radar-legend .legend-item { white-space: nowrap; }
+    .donut-wrap { display: grid; grid-template-columns: 142px 1fr; align-items: center; gap: 18px; min-height: 170px; }
+    .donut { width: 138px; aspect-ratio: 1; position: relative; display: grid; place-items: center; border-radius: 50%; background: conic-gradient(var(--indigo) 0 45%, var(--cyan) 45% 80%, var(--mint) 80% 100%); }
+    .donut::after { position: absolute; inset: 22px; border-radius: 50%; background: var(--surface-solid); content: ""; }
+    .donut-center { position: relative; z-index: 1; text-align: center; }
+    .donut-center b { display: block; font-size: 17px; letter-spacing: -.05em; }
+    .donut-center span { color: var(--muted); font-size: 7px; }
+    .intent-list { display: grid; gap: 12px; }
+    .intent-row { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 7px; color: var(--muted); font-size: 8px; }
+    .intent-row > span { min-width: 0; display: flex; align-items: center; gap: 7px; }
+    .intent-dot { width: 7px; height: 7px; border-radius: 2px; background: var(--intent-color,var(--indigo)); }
+    .intent-row b { color: var(--ink); font-size: 9px; }
+    .gate-range { grid-column: 1 / -1; margin-top: 7px; padding: 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--soft); color: var(--muted); font-family: var(--mono); font-size: 8px; }
+    .architecture-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; }
+    .module-card { min-height: 182px; position: relative; overflow: hidden; padding: 17px; transition: transform .2s, border-color .2s; }
+    .module-card:hover { transform: translateY(-4px); border-color: color-mix(in srgb, var(--indigo) 30%, var(--line)); }
+    .module-card::after { position: absolute; right: -32px; bottom: -42px; width: 100px; height: 100px; border-radius: 50%; background: color-mix(in srgb, var(--indigo) 8%, transparent); content: ""; }
+    .module-icon { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 10px; color: var(--indigo); background: var(--indigo-soft); }
+    .module-icon svg { width: 17px; height: 17px; }
+    .module-card h3 { margin: 14px 0 5px; font-size: 11px; }
+    .module-file { color: var(--indigo); font-family: var(--mono); font-size: 8px; }
+    .module-card p { position: relative; z-index: 1; margin: 9px 0 0; color: var(--muted); font-size: 9px; line-height: 1.65; }
+    .api-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; padding: 12px 15px; }
+    .api-strip > span { margin-right: 3px; color: var(--muted); font-size: 8px; font-weight: 750; }
+    .route { display: inline-flex; gap: 6px; align-items: center; padding: 6px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--soft); font-family: var(--mono); font-size: 8px; }
+    .route b { color: var(--mint); font-weight: 500; }
+    footer { margin-top: 20px; border-top: 1px solid var(--line); }
+    .footer-inner { min-height: 94px; display: flex; align-items: center; justify-content: space-between; gap: 20px; color: var(--muted); font-size: 8px; }
+    .footer-brand { color: var(--ink); font-size: 9px; font-weight: 800; }
+    .footer-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
+    .footer-status { display: inline-flex; align-items: center; gap: 6px; }
+    .footer-status i { width: 6px; height: 6px; border-radius: 50%; background: var(--mint); }
+    .reveal { opacity: 0; transform: translateY(12px); transition: opacity .55s ease, transform .55s ease; }
+    .reveal.visible { opacity: 1; transform: translateY(0); }
+    .toast { position: fixed; z-index: 40; right: 20px; bottom: 20px; max-width: min(360px,calc(100vw - 40px)); padding: 11px 15px; transform: translateY(10px); border: 1px solid var(--line); border-radius: 10px; background: var(--surface-solid); box-shadow: var(--shadow); color: var(--muted); font-size: 9px; opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; }
+    .toast.visible { transform: translateY(0); opacity: 1; }
+    @media (max-width: 980px) {
+      .nav { gap: 14px; } .brand { min-width: auto; } .nav-links { display: none; }
+      .nav-actions { margin-left: auto; } .hero { gap: 28px; } .stats-grid { grid-template-columns: repeat(2,1fr); }
+      .architecture-grid { grid-template-columns: repeat(2,1fr); }
+    }
+    @media (max-width: 720px) {
+      .wrap { width: min(100% - 30px,560px); } .hero { grid-template-columns: 1fr; gap: 28px; padding: 52px 0 42px; }
+      .hero-copy { font-size: 12px; } .flow-card { max-width: 500px; }
+      .section { padding: 40px 0; } .section-heading { align-items: flex-start; flex-direction: column; }
+      .playground-layout, .chart-grid { grid-template-columns: 1fr; } .chart-card.full { grid-column: auto; }
+      .input-card, .result-card { padding: 15px; } .chart-card { padding: 14px; } .sample-label { white-space: normal; }
+      .donut-wrap { grid-template-columns: minmax(96px,112px) minmax(0,1fr); gap: 10px; } .donut { width: 100px; }
+      .footer-inner { align-items: flex-start; flex-direction: column; justify-content: center; padding: 19px 0; gap: 10px; }
+    }
+    @media (max-width: 430px) {
+      .wrap { width: calc(100% - 24px); } .service { max-width: 42px; overflow: hidden; padding: 7px; font-size: 0; }
+      .service-dot { flex: 0 0 auto; } .github-btn { width: 35px; padding: 0; font-size: 0; } .nav { min-height: 60px; gap: 8px; } .nav-actions { gap: 6px; }
+      .brand-name { max-width: 178px; font-size: 11px; } .brand-caption { font-size: 8px; } .brand-mark { width: 34px; height: 34px; }
+      .hero { padding-top: 42px; } h1 { font-size: 39px; } .flow-card { padding: 14px;       }
+      @media (max-width: 340px) {
+        .brand-name { max-width: 96px; font-size: 10px; }
+        .brand-caption { font-size: 6px; }
+        .donut-wrap { grid-template-columns: 88px minmax(0,1fr); gap: 8px; }
+        .donut { width: 86px; }
+        .intent-row { font-size: 7px; }
+        .intent-row b { font-size: 7px; }
+      }
+      .pipeline { gap: 6px 2px; } .flow-node { min-height: 61px; } .flow-node b { font-size: 7px; }
+      .architecture-grid { grid-template-columns: 1fr; } .module-card { min-height: 155px; }
+      .stats-grid { gap: 8px; } .stat-card { min-height: 115px; padding: 11px; }
+      .stat-top { font-size: 8px; } .stat-value { font-size: 23px; } .comparison-details { gap: 5px; }
+      .detail-chip { padding: 7px; } .mini-step { flex-direction: column; gap: 3px; text-align: center; }
+      .result-metric { padding: 7px; } .result-metric b { font-size: 12px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+      .reveal { opacity: 1; transform: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <nav class="nav wrap" aria-label="Main navigation">
+      <a class="brand" href="#overview" aria-label="Limas — Subcortical Context Compression home">
+        <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h6l3 5h7M4 17h6l3-5"/><circle cx="4" cy="7" r="1.5"/><circle cx="4" cy="17" r="1.5"/><circle cx="20" cy="12" r="1.5"/><path d="m16 9 4 3-4 3"/></svg></span>
+        <span class="brand-name">Limas<span class="brand-caption">Subcortical Context Compression</span></span>
+      </a>
+      <div class="nav-links">
+        <a href="#overview" class="active">Overview</a><a href="#playground">Live Playground</a><a href="#analytics">Metrics &amp; Analytics</a><a href="#architecture">Architecture</a>
+      </div>
+      <div class="nav-actions">
+        <div class="service" id="service-state"><span class="service-dot"></span><span id="service-label">Checking API</span></div>
+        <button class="icon-btn" id="theme-toggle" type="button" aria-label="Switch to dark mode">◐</button>
+        <a class="github-btn" href="https://github.com/search?q=Token-Aware+Context+Compressor&amp;type=repositories" target="_blank" rel="noreferrer" aria-label="Search GitHub repositories for this project">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .9a11.1 11.1 0 0 0-3.51 21.63c.55.1.76-.24.76-.53v-2.08c-3.1.67-3.76-1.32-3.76-1.32-.5-1.28-1.24-1.62-1.24-1.62-1.01-.69.08-.68.08-.68 1.12.08 1.71 1.15 1.71 1.15.99 1.7 2.6 1.21 3.24.92.1-.72.39-1.21.71-1.49-2.48-.28-5.09-1.24-5.09-5.53 0-1.22.44-2.21 1.15-2.99-.12-.28-.5-1.42.11-2.95 0 0 .94-.3 3.05 1.14A10.6 10.6 0 0 1 12 6.18c.95 0 1.9.13 2.79.38 2.12-1.44 3.05-1.14 3.05-1.14.61 1.53.23 2.67.11 2.95.72.78 1.15 1.77 1.15 2.99 0 4.3-2.61 5.25-5.1 5.53.4.35.76 1.03.76 2.08V22c0 .29.2.63.77.52A11.1 11.1 0 0 0 12 .9Z"/></svg>GitHub Repository
+        </a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero wrap" id="overview">
+      <canvas id="particle-canvas" aria-hidden="true"></canvas>
+      <div>
+        <div class="eyebrow"><span class="eyebrow-dot"></span> INTELLIGENT CONTEXT ENGINEERING</div>
+        <h1><em>Limas</em></h1>
+        <p class="hero-copy"><strong>Subcortical Context Compression Middleware</strong><br>Reduce prompt context bloat, lower LLM latency, and preserve co-reference integrity — without rewriting your source facts. Explore sentence-level selection, query-aware gating, and paired model comparisons.</p>
+        <div class="hero-actions">
+          <a class="button-primary" href="#playground">Try live compressor <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a>
+          <a class="button-secondary" href="#analytics">View benchmark analytics <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V5m0 14h17M8 15l4-4 3 2 6-7"/></svg></a>
+        </div>
+        <div class="hero-footnote"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z"/><path d="m9 12 2 2 4-4"/></svg>Original sentence text stays intact · Groq prompt usage is provider-reported</div>
+      </div>
+      <div class="flow-card" aria-label="RAG pipeline flow diagram">
+        <div class="flow-card-head"><div><strong>Limas context-to-answer pipeline</strong><span>Grounded generation with semantic pruning</span></div><span class="live-tag">PIPELINE READY</span></div>
+        <div class="pipeline">
+          <div class="flow-node query"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.5 4.5M8 10h6m-3-3v6"/></svg><b>User query</b></div>
+          <span class="flow-arrow a1">→</span>
+          <div class="flow-node passages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 4.5A2.5 2.5 0 0 1 7.5 2H20v17H7.5A2.5 2.5 0 0 0 5 21.5z"/><path d="M5 4.5v17M9 7h7M9 11h7"/></svg><b>Vector DB passages</b></div>
+          <span class="flow-arrow a2">→</span>
+          <div class="flow-node compressor"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16M7 10h10m-7 5h4m-2 5v-5"/></svg><b>Limas Compressor</b></div>
+          <span class="flow-arrow a-down">↓</span>
+          <span class="flow-arrow a3">←</span>
+          <div class="flow-node llm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6 2.1 2.1m0-12.8-2.1 2.1m-8.6 8.6-2.1 2.1"/><circle cx="12" cy="12" r="5"/></svg><b>Grounded Groq LLM</b></div>
+          <div class="flow-node answer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16v11H8l-4 4z"/><path d="M8 9h8m-8 4h5"/></svg><b>Final answer</b></div>
+        </div>
+        <div class="flow-caption"><span>ORIGINAL FACTS · SELECTIVE CONTEXT</span><strong>~ fewer prompt tokens</strong></div>
+      </div>
+    </section>
+
+    <section class="section wrap" id="playground">
+      <div class="section-heading">
+        <div><span class="section-kicker">Experiment suite · 01</span><h2>Interactive compression &amp;<br>dual-LLM comparison</h2><p>Use the live API to compare full retrieved context against semantically selected sentences. Both answers use the same query and Groq model.</p></div>
+        <span class="sample-label">Two concurrent Groq requests per comparison</span>
+      </div>
+      <div class="playground-layout">
+        <form class="surface input-card" id="compare-form">
+          <div class="card-title"><div><h3>Configure an experiment</h3><p>Retrieved passages are supplied directly; retrieval stays external.</p></div></div>
+          <div class="input-field">
+            <div class="label-row"><label for="test-case">Starting scenario</label><span class="hint">Choose a sample or write your own</span></div>
+            <div class="case-row"><select id="test-case"><option value="climate">Climate &amp; rainfall shifts</option><option value="solar">Solar energy efficiency</option><option value="revenue">Corporate revenue Q3</option><option value="custom">Custom scenario</option></select><button class="case-save" id="save-case" type="button" title="Save current scenario in this browser">Save</button></div>
+          </div>
+          <div class="input-field">
+            <div class="label-row"><label for="query">User query</label><span class="hint">Sent unchanged to both model calls</span></div>
+            <input type="text" id="query" required autocomplete="off" value="How does climate change affect precipitation?">
+          </div>
+          <div class="input-field">
+            <div class="label-row"><label for="documents">Retrieved passages</label><span class="hint">Separate passages with a blank line</span></div>
+            <textarea id="documents" required>Climate change alters the global hydrological cycle by increasing evaporation and changing storm tracks. This often shifts regional rainfall patterns.
+
+The office kitchen is closed on Fridays.
+
+Warmer air can hold more moisture, which may intensify heavy rainfall in some regions. Other regions can experience longer dry periods.</textarea>
+            <div class="upload-dropzone" id="upload-dropzone" role="button" tabindex="0" aria-label="Choose a PDF or text file or drop it here">
+              <span><strong>Drop a PDF or text file</strong><small>Extracted pages will populate the passages box · max 25 MB</small></span>
+              <button type="button" id="browse-upload">Choose file</button>
+              <input id="document-upload" type="file" accept=".pdf,.txt,application/pdf,text/plain" hidden>
+            </div>
+            <p class="upload-status" id="upload-status" aria-live="polite"></p>
+          </div>
+          <div class="input-field">
+            <div class="label-row"><label for="expected-answer">Expected reference answer</label><span class="hint">Optional · lexical overlap proxy</span></div>
+            <input type="text" id="expected-answer" placeholder="Add a reference answer to calculate similarity">
+          </div>
+          <div class="control-box">
+            <div class="control-head"><strong>Research feature controls</strong><span>Enabled by default</span></div>
+            <div class="switch-list">
+              <label class="switch-row" for="enable-coref"><span>Discourse antecedent preservation</span><input id="enable-coref" type="checkbox" checked><span class="switch" aria-hidden="true"></span></label>
+              <label class="switch-row" for="enable-multihop"><span>Pairwise interdependence gain</span><input id="enable-multihop" type="checkbox" checked><span class="switch" aria-hidden="true"></span></label>
+              <label class="switch-row" for="adaptive-gating"><span>Adaptive complexity gating</span><input id="adaptive-gating" type="checkbox" checked><span class="switch" aria-hidden="true"></span></label>
+            </div>
+            <div class="sliders">
+              <label><span class="range-label"><span>Manual relevance threshold τ</span><output id="threshold-value">0.35</output></span><input id="threshold" type="range" min="0.1" max="1" step="0.01" value="0.35" disabled></label>
+              <label><span class="range-label"><span>Top-K sentences</span><output id="top-k-value">4</output></span><input id="top-k" type="range" min="1" max="10" step="1" value="4"></label>
+              <label><span class="range-label"><span>Maximum local word budget*</span><output id="budget-value">256</output></span><input id="max-tokens" type="range" min="64" max="1024" step="16" value="256"></label>
+            </div>
+            <p class="reference-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg>*The API's <code>max_tokens</code> setting caps an estimated word budget; it is not an exact tokenizer limit. τ is editable when adaptive gating is off.</p>
+          </div>
+          <div class="run-actions"><button class="run-button" id="run-button" type="submit">Run paired RAG comparison&nbsp; →</button><button class="compress-only" id="compress-only" type="button">Compress only</button></div>
+          <p class="error-message" id="form-error" role="alert"></p>
+          <p class="save-message" id="save-message" aria-live="polite"></p>
+        </form>
+
+        <div class="results-column">
+          <section class="surface result-card" aria-labelledby="results-title">
+            <div class="result-head">
+              <div><h3 id="results-title">Paired generation results</h3><p>Switch between source context and the pruned prompt.</p></div>
+              <span class="model-badge" id="model-pill">Groq · loading model</span>
+            </div>
+            <div class="result-tabs" role="tablist" aria-label="Paired RAG results">
+              <button class="result-tab" id="tab-baseline" type="button" role="tab" aria-selected="false" aria-controls="panel-baseline">Baseline RAG · Without compressor</button>
+              <button class="result-tab" id="tab-compressed" type="button" role="tab" aria-selected="true" aria-controls="panel-compressed">Compressed RAG · With compressor</button>
+            </div>
+            <section class="result-panel" id="panel-baseline" role="tabpanel" aria-labelledby="tab-baseline">
+              <div class="mini-flow"><span class="mini-step"><i>Q</i>Query</span><span class="mini-step"><i>↗</i>Passages</span><span class="mini-step"><i>—</i>Full context</span><span class="mini-step"><i>✳</i>Groq</span></div>
+              <div class="context-panel"><div class="panel-label"><span>Full context sent to model</span><span>Unmodified</span></div><div class="context-content" id="context-baseline">Run a comparison to inspect the full context.</div></div>
+              <div class="answer-box"><div class="panel-label">Baseline answer</div><p class="placeholder" id="answer-baseline">The generated answer will appear here.</p></div>
+              <div class="result-metrics"><div class="result-metric"><b id="baseline-prompt">—</b><span>Prompt tokens · Groq actual</span></div><div class="result-metric"><b id="baseline-completion">—</b><span>Completion tokens</span></div><div class="result-metric"><b id="baseline-latency">—</b><span>LLM latency</span></div></div>
+            </section>
+            <section class="result-panel active" id="panel-compressed" role="tabpanel" aria-labelledby="tab-compressed">
+              <div class="mini-flow"><span class="mini-step"><i>Q</i>Query</span><span class="mini-step"><i>↗</i>Passages</span><span class="mini-step"><i>▽</i>Compressor</span><span class="mini-step"><i>✳</i>Groq</span></div>
+              <div class="context-panel"><div class="panel-label"><span>Selected source sentences</span><span id="retained-label">Awaiting run</span></div><div class="context-content" id="context-compressed">Retained sentences will be highlighted in emerald after a run.</div></div>
+              <div class="answer-box"><div class="panel-label">Compressed answer</div><p class="placeholder" id="answer-compressed">The generated answer will appear here.</p></div>
+              <div class="result-metrics"><div class="result-metric"><b id="compressed-prompt">—</b><span>Prompt tokens · Groq actual</span></div><div class="result-metric"><b id="compressed-completion">—</b><span>Completion tokens</span></div><div class="result-metric"><b id="compressed-latency">—</b><span>LLM latency</span></div></div>
+            </section>
+            <div class="diff-banner"><div><strong id="savings-title">Actual prompt-token savings</strong><span id="savings-caption">Run a paired comparison to see provider-reported usage and sentence pruning.</span></div><div class="diff-value" id="savings-value">—<small>Groq usage</small></div></div>
+            <div class="comparison-details">
+              <div class="detail-chip"><span>Baseline prompt tokens</span><b id="detail-baseline">—</b></div>
+              <div class="detail-chip"><span>Compressed prompt tokens</span><b id="detail-compressed">—</b></div>
+              <div class="detail-chip"><span>LLM latency difference</span><b id="detail-latency">—</b></div>
+            </div>
+            <details class="audit-details">
+              <summary id="audit-summary">Per-sentence score audit · run comparison to inspect</summary>
+              <div class="audit-table-wrap"><table class="audit-table"><thead><tr><th>Index</th><th>Source sentence</th><th>Isolated</th><th>Pairwise gain</th><th>Final</th><th>Decision</th><th>Reason</th></tr></thead><tbody id="audit-rows"><tr><td colspan="7">No audit available yet.</td></tr></tbody></table></div>
+            </details>
+            <div class="notice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg><span>Prompt counts come from Groq's response usage. Keep <code>GROQ_API_KEY</code> in the server-side <code>.env</code>; never enter it in the browser. Reference similarity is a lexical proxy, not a factuality or answer-quality guarantee. The analytics charts show recorded workbook runs and remain empty until paired comparisons are saved.</span></div>
+          </section>
+          <div class="result-head" style="padding:0 2px;margin:0">
+            <div><h3>Latest run diagnostics</h3><p id="run-summary">No comparison run yet.</p></div>
+            <span class="status-badge" id="run-status">READY</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section analytics wrap" id="analytics">
+      <div class="section-heading">
+        <div><span class="section-kicker">Evaluation dashboard · 02</span><h2>Performance, at a glance.</h2><p>Live aggregates from successful paired runs saved in <code>reports/eval_met.xlsx</code>.</p></div>
+        <span class="sample-label" id="analytics-run-count">Loading run history…</span>
+      </div>
+      <div class="stats-grid">
+        <article class="surface stat-card reveal"><div class="stat-top"><span>Avg. prompt-token reduction</span><span class="stat-icon mint"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M13 2 4 14h7l-1 8 10-13h-7z"/></svg></span></div><div class="stat-value"><span id="stat-reduction">—</span><small>%</small></div><div class="stat-foot">Provider-reported prompt usage</div></article>
+        <article class="surface stat-card reveal"><div class="stat-top"><span>Avg. LLM latency saved</span><span class="stat-icon cyan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m13 2-3 9h7l-6 11 2-9H6z"/></svg></span></div><div class="stat-value"><span id="stat-latency">—</span><small>ms</small></div><div class="stat-foot">Baseline minus compressed total latency</div></article>
+        <article class="surface stat-card reveal"><div class="stat-top"><span>Semantic quality retention</span><span class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg></span></div><div class="stat-value"><span id="stat-quality">—</span><small>%</small></div><div class="stat-foot">Mean compressed-answer Jaccard when reference is provided</div></article>
+        <article class="surface stat-card reveal"><div class="stat-top"><span>Pronominal coreferences preserved</span><span class="stat-icon purple"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="7" r="3"/><circle cx="18" cy="17" r="3"/><path d="M8.5 9 15.5 15m-7-6 7 6"/></svg></span></div><div class="stat-value"><span id="stat-coref">0</span><small>edges</small></div><div class="stat-foot">Total preserved edges across paired runs</div></article>
+      </div>
+      <div class="chart-grid">
+        <article class="surface chart-card">
+          <div class="chart-head"><div><h3>Prompt token usage vs. generation latency</h3><p>Last ten paired runs · bars = provider prompt tokens · line = latency saved (ms)</p></div><div class="chart-legend"><span class="legend-item"><i class="legend-dot"></i>Baseline tokens</span><span class="legend-item"><i class="legend-dot green"></i>Compressed tokens</span><span class="legend-item"><i class="legend-dot line"></i>Latency saved</span></div></div>
+          <svg class="chart-svg" id="token-chart" viewBox="0 0 620 240" role="img" aria-label="Live bar and line chart of baseline and compressed prompt tokens and latency saved for the last ten paired runs"></svg>
+        </article>
+        <article class="surface chart-card">
+          <div class="chart-head"><div><h3>Query complexity gating distribution</h3><p>Intent counts from recorded paired runs</p></div></div>
+          <div class="donut-wrap"><div class="donut" id="intent-donut" role="img" aria-label="No recorded query intents"><div class="donut-center"><b id="intent-total">0</b><span>paired runs</span></div></div>
+            <div class="intent-list" id="intent-list"><div class="gate-range">Observed dynamic threshold range<br><strong id="threshold-range">—</strong></div></div>
+          </div>
+        </article>
+        <article class="surface chart-card full">
+          <div class="chart-head"><div><h3>Compression run activity &amp; token savings</h3><p>Last 105 paired runs · hover a cell for run details</p></div><span class="sample-label">Live workbook history</span></div>
+          <div class="heatmap" id="heatmap" role="grid" aria-label="Activity grid for the last 105 paired compression runs"></div>
+          <p id="analytics-empty" class="chart-empty" hidden>No successful paired runs have been recorded yet.</p>
+          <div class="heatmap-footer"><span>Last 15 weeks</span><span class="heat-legend"><span>Less</span><i></i><i></i><i></i><i></i><i></i><span>More savings</span></span></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section wrap" id="architecture">
+      <div class="section-heading">
+        <div><span class="section-kicker">Under the hood · 03</span><h2>Built to keep context connected.</h2><p>Four composable modules shape sentence selection, preserve discourse dependencies, and measure paired runs.</p></div>
+        <span class="sample-label">Python middleware · FastAPI</span>
+      </div>
+      <div class="architecture-grid">
+        <article class="surface module-card reveal"><span class="module-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8 8l8 8m-8 0 3-3m2-2 3-3"/></svg></span><h3>DiscoursePreserver</h3><span class="module-file">coreference.py</span><p>Prevents orphaned pronouns by binding dependent sentences to antecedents as atomic blocks.</p></article>
+        <article class="surface module-card reveal"><span class="module-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5M8 10.5h5m-2.5-2.5v5"/></svg></span><h3>CrossEncoderRelevanceScorer</h3><span class="module-file">scorer.py · models/cross_encoder.py</span><p>Calculates batched query-to-sentence relevance scores with contiguous pairwise joint gain.</p></article>
+        <article class="surface module-card reveal"><span class="module-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16M7 10h10m-7 5h4m-2 0v5"/></svg></span><h3>QueryComplexityGater</h3><span class="module-file">gating.py</span><p>Dynamically scales relevance thresholds and word budgets based on query intent signals.</p></article>
+        <article class="surface module-card reveal"><span class="module-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 4h14v16H5zM8 8h8m-8 4h8m-8 4h5"/></svg></span><h3>Groq &amp; metric logger</h3><span class="module-file">groq_client.py · comparison_metrics.py</span><p>Uses provider-reported prompt-token usage and appends paired evaluation metrics to Excel.</p></article>
+      </div>
+      <div class="surface api-strip"><span>LIMAS API</span><span class="route"><b>POST</b> /compress</span><span class="route"><b>POST</b> /compare</span><span class="route"><b>POST</b> /upload_pdf</span><span class="route"><b>GET</b> /analytics</span><span class="route"><b>GET</b> /config</span><span class="route"><b>GET</b> /health</span></div>
+    </section>
+  </main>
+
+  <footer><div class="wrap footer-inner"><div><span class="footer-brand">Limas</span><span class="brand-caption">Subcortical Context Compression Middleware for RAG Pipelines</span></div><div class="footer-meta"><span class="footer-status" id="footer-api-status"><i></i> Checking Limas API</span><span>Prompt metrics reflect provider usage; local budgets are word estimates.</span><span>© 2026 Limas</span></div></div></footer>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    const $ = (selector) => document.querySelector(selector);
+    const form = $("#compare-form");
+    const errorBox = $("#form-error");
+    const runButton = $("#run-button");
+    const scenarios = {
+      climate: {
+        name: "Climate & rainfall shifts",
+        query: "How does climate change affect precipitation?",
+        documents: "Climate change alters the global hydrological cycle by increasing evaporation and changing storm tracks. This often shifts regional rainfall patterns.\n\nThe office kitchen is closed on Fridays.\n\nWarmer air can hold more moisture, which may intensify heavy rainfall in some regions. Other regions can experience longer dry periods.",
+        expected: "Climate change shifts rainfall patterns. Warmer air can intensify heavy rainfall in some regions while other regions may experience longer dry periods."
+      },
+      solar: {
+        name: "Solar energy efficiency",
+        query: "How do solar panels convert sunlight into electricity?",
+        documents: "Photovoltaic cells absorb photons from sunlight. The energy frees electrons in a semiconductor, creating an electric current.\n\nSolar panels are often mounted on rooftops and can be connected to inverters that convert direct current into alternating current.\n\nThe city library opens at 9 a.m. and has a collection of travel books.",
+        expected: "Photovoltaic cells convert sunlight into electricity by freeing electrons in a semiconductor; an inverter can convert direct current to alternating current."
+      },
+      revenue: {
+        name: "Corporate revenue Q3",
+        query: "Compare Acme Corp's Q3 revenue with its Q2 results and explain the main driver.",
+        documents: "Acme Corp reported Q3 revenue of $4.8 billion, a 12% increase over Q2. The company attributed the gain primarily to stronger cloud subscriptions.\n\nIts cloud division grew 21% year over year, while hardware revenue remained nearly flat. Analysts had forecast a 9% sequential increase.\n\nThe company cafeteria serves breakfast from 7:30 a.m. until 10 a.m.\n\nManagement expects cloud demand to remain strong into the next quarter, while noting that foreign exchange may create headwinds.",
+        expected: "Acme Corp's Q3 revenue was $4.8 billion, up 12% from Q2, mainly driven by stronger cloud subscriptions."
+      }
+    };
+    const caseSelect = $("#test-case");
+    const customCasesKey = "limas-test-cases";
+    let activeCaseName = scenarios.climate.name;
+    let latestResult = null;
+    let toastTimer;
+
+    function setTheme(theme) {
+      document.documentElement.dataset.theme = theme;
+      try { localStorage.setItem("limas-theme", theme); } catch { /* Theme still works for this page. */ }
+      const button = $("#theme-toggle");
+      button.textContent = theme === "dark" ? "☀" : "◐";
+      button.setAttribute("aria-label", theme === "dark" ? "Switch to light mode" : "Switch to dark mode");
+    }
+    let preferredTheme = "light";
+    try { preferredTheme = localStorage.getItem("limas-theme") || preferredTheme; } catch { /* Use light mode by default. */ }
+    setTheme(preferredTheme === "dark" ? "dark" : "light");
+    $("#theme-toggle").addEventListener("click", () => setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
+
+    function readCustomCases() {
+      try {
+        const value = JSON.parse(localStorage.getItem(customCasesKey) || "[]");
+        return Array.isArray(value) ? value.filter((item) => item && typeof item.name === "string" && typeof item.query === "string" && typeof item.documents === "string") : [];
+      } catch { return []; }
+    }
+    function renderCustomCases() {
+      caseSelect.querySelectorAll("option[data-custom]").forEach((option) => option.remove());
+      readCustomCases().forEach((item, index) => {
+        const option = document.createElement("option");
+        option.value = `saved:${index}`;
+        option.dataset.custom = "true";
+        option.textContent = item.name;
+        caseSelect.append(option);
+      });
+    }
+    renderCustomCases();
+    caseSelect.addEventListener("change", () => {
+      const selected = caseSelect.value;
+      let item;
+      if (selected.startsWith("saved:")) {
+        item = readCustomCases()[Number(selected.slice(6))];
+        if (!item) return;
+      } else if (selected === "custom") {
+        activeCaseName = "";
+        $("#query").value = "";
+        $("#documents").value = "";
+        $("#expected-answer").value = "";
+        $("#query").focus();
+        return;
+      } else {
+        item = scenarios[selected];
+      }
+      if (!item) return;
+      activeCaseName = item.name;
+      $("#query").value = item.query;
+      $("#documents").value = item.documents;
+      $("#expected-answer").value = item.expected || item.expected_answer || "";
+      resetOutput();
+    });
+    $("#save-case").addEventListener("click", () => {
+      const name = window.prompt("Name this saved scenario:");
+      if (!name || !name.trim()) return;
+      const item = { name: name.trim(), query: $("#query").value.trim(), documents: $("#documents").value.trim(), expected_answer: $("#expected-answer").value.trim() };
+      if (!item.query || !item.documents) {
+        showToast("Add a query and at least one passage before saving.");
+        return;
+      }
+      try {
+        const all = readCustomCases().filter((entry) => entry.name.toLowerCase() !== item.name.toLowerCase());
+        all.push(item);
+        localStorage.setItem(customCasesKey, JSON.stringify(all));
+        renderCustomCases();
+        const option = [...caseSelect.options].find((entry) => entry.textContent === item.name);
+        if (option) caseSelect.value = option.value;
+        activeCaseName = item.name;
+        $("#save-message").textContent = `Saved “${item.name}” in this browser.`;
+      } catch {
+        showToast("Could not save this scenario to browser storage.");
+      }
+    });
+    ["#query", "#documents", "#expected-answer"].forEach((selector) => $(selector).addEventListener("input", () => {
+      if (caseSelect.value !== "custom") caseSelect.value = "custom";
+      activeCaseName = "";
+    }));
+    const adaptiveInput = $("#adaptive-gating");
+    const thresholdInput = $("#threshold");
+    function syncThreshold() {
+      thresholdInput.disabled = adaptiveInput.checked;
+      thresholdInput.setAttribute("aria-label", adaptiveInput.checked ? "Manual threshold disabled while adaptive gating is enabled" : "Manual relevance threshold");
+    }
+    adaptiveInput.addEventListener("change", syncThreshold);
+    syncThreshold();
+    [["#threshold", "#threshold-value", (value) => Number(value).toFixed(2)], ["#top-k", "#top-k-value", String], ["#max-tokens", "#budget-value", String]].forEach(([inputSelector, outputSelector, format]) => {
+      const input = $(inputSelector);
+      const output = $(outputSelector);
+      input.addEventListener("input", () => { output.value = format(input.value); output.textContent = format(input.value); });
+    });
+
+    function showToast(message) {
+      const toast = $("#toast");
+      toast.textContent = message;
+      toast.classList.add("visible");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove("visible"), 2800);
+    }
+    function formatCount(value) {
+      return Number.isInteger(value) ? value.toLocaleString() : (typeof value === "number" ? value.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "N/A");
+    }
+    function setUploadStatus(message, isError = false) {
+      const status = $("#upload-status");
+      status.textContent = message;
+      status.classList.toggle("error", isError);
+    }
+    const uploadInput = $("#document-upload");
+    const uploadDropzone = $("#upload-dropzone");
+    async function uploadFile(file) {
+      if (!file) return;
+      setUploadStatus(`Uploading ${file.name}…`);
+      const formData = new FormData();
+      formData.append("file", file);
+      try {
+        const response = await fetch("/upload_pdf", { method: "POST", body: formData });
+        const result = await response.json();
+        if (!response.ok) throw new Error(typeof result.detail === "string" ? result.detail : `Upload failed (HTTP ${response.status}).`);
+        $("#documents").value = result.passages.join("\n\n");
+        $("#test-case").value = "custom";
+        activeCaseName = file.name;
+        resetOutput();
+        setUploadStatus(`Loaded ${result.passages.length} text passage${result.passages.length === 1 ? "" : "s"} from ${result.filename} (${result.page_count} page${result.page_count === 1 ? "" : "s"}).`);
+      } catch (error) {
+        setUploadStatus(error instanceof Error ? error.message : "File upload failed.", true);
+      } finally {
+        uploadInput.value = "";
+      }
+    }
+    $("#browse-upload").addEventListener("click", () => uploadInput.click());
+    uploadDropzone.addEventListener("click", (event) => {
+      if (event.target !== $("#browse-upload")) uploadInput.click();
+    });
+    uploadDropzone.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        uploadInput.click();
+      }
+    });
+    uploadInput.addEventListener("change", () => uploadFile(uploadInput.files?.[0]));
+    ["dragenter", "dragover"].forEach((eventName) => uploadDropzone.addEventListener(eventName, (event) => {
+      event.preventDefault();
+      uploadDropzone.classList.add("dragover");
+    }));
+    ["dragleave", "drop"].forEach((eventName) => uploadDropzone.addEventListener(eventName, (event) => {
+      event.preventDefault();
+      uploadDropzone.classList.remove("dragover");
+    }));
+    uploadDropzone.addEventListener("drop", (event) => uploadFile(event.dataTransfer?.files?.[0]));
+
+    function drawTokenChart(records) {
+      const svg = $("#token-chart");
+      const ns = "http://www.w3.org/2000/svg";
+      svg.replaceChildren();
+      const create = (tag, attributes, text) => {
+        const element = document.createElementNS(ns, tag);
+        Object.entries(attributes).forEach(([key, value]) => element.setAttribute(key, String(value)));
+        if (text !== undefined) element.textContent = text;
+        svg.append(element);
+        return element;
+      };
+      if (!records.length) {
+        create("text", { x: 310, y: 122, "text-anchor": "middle", class: "chart-empty" }, "Run a paired comparison to populate this chart.");
+        return;
+      }
+      const validTokens = records.flatMap((row) => [row.baseline_prompt_tokens, row.compressed_prompt_tokens]).filter((value) => typeof value === "number" && Number.isFinite(value));
+      const maxTokens = Math.max(1, ...validTokens);
+      const latencyValues = records.map((row) => row.latency_saved_ms).filter((value) => typeof value === "number" && Number.isFinite(value));
+      const latencyMin = Math.min(0, ...latencyValues);
+      const latencyMax = Math.max(1, ...latencyValues);
+      [28, 71, 114, 157, 200].forEach((y) => create("line", { x1: 43, y1: y, x2: 594, y2: y, class: y === 200 ? "axis" : "gridline" }));
+      const step = 551 / records.length;
+      const points = [];
+      records.forEach((row, index) => {
+        const center = 43 + step * (index + .5);
+        const base = row.baseline_prompt_tokens;
+        const compressed = row.compressed_prompt_tokens;
+        if (Number.isFinite(base)) {
+          const height = base / maxTokens * 166;
+          create("rect", { x: center - 11, y: 194 - height, width: 10, height, rx: 2, class: "bar-base" });
+        }
+        if (Number.isFinite(compressed)) {
+          const height = compressed / maxTokens * 166;
+          create("rect", { x: center + 1, y: 194 - height, width: 10, height, rx: 2, class: "bar-comp" });
+        }
+        const latency = row.latency_saved_ms;
+        if (Number.isFinite(latency)) {
+          const y = 175 - ((latency - latencyMin) / Math.max(1, latencyMax - latencyMin)) * 130;
+          points.push(`${center},${y}`);
+          const point = create("circle", { cx: center, cy: y, r: 3.3, class: "latency-point" });
+          const title = document.createElementNS(ns, "title");
+          title.textContent = `${row.test_case}: ${latency.toFixed(0)} ms latency saved`;
+          point.append(title);
+        }
+        create("text", { x: center, y: 219, "text-anchor": "middle" }, String(row.run_number));
+      });
+      if (points.length) create("polyline", { points: points.join(" "), class: "latency-line" });
+      create("text", { x: 8, y: 17 }, `${maxTokens.toLocaleString()} tokens`);
+      create("text", { x: 535, y: 17 }, "Latency saved");
+    }
+    function renderAnalytics(data) {
+      const updateStat = (id, value, decimals = 1) => {
+        $(id).textContent = value === null || value === undefined ? "—" : Number(value).toFixed(decimals);
+      };
+      updateStat("#stat-reduction", data.avg_prompt_token_reduction_percent);
+      updateStat("#stat-latency", data.avg_latency_saved_ms, 0);
+      updateStat("#stat-quality", data.avg_quality_retention_percent);
+      $("#stat-coref").textContent = formatCount(data.coreferences_preserved);
+      $("#analytics-run-count").textContent = `${data.runs_total} successful paired run${data.runs_total === 1 ? "" : "s"}`;
+      const thresholds = data.dynamic_threshold_range;
+      $("#threshold-range").textContent = thresholds.min === null || thresholds.max === null ? "No adaptive runs yet" : `${Number(thresholds.min).toFixed(2)} — ${Number(thresholds.max).toFixed(2)}`;
+      const intents = data.intent_distribution || [];
+      const total = intents.reduce((sum, item) => sum + item.count, 0);
+      $("#intent-total").textContent = String(total);
+      const colors = ["var(--indigo)", "var(--cyan)", "var(--mint)", "var(--purple)"];
+      let start = 0;
+      const slices = intents.map((item, index) => {
+        const end = start + (total ? item.count / total * 100 : 0);
+        const slice = `${colors[index % colors.length]} ${start}% ${end}%`;
+        start = end;
+        return slice;
+      });
+      $("#intent-donut").style.background = slices.length ? `conic-gradient(${slices.join(",")})` : "conic-gradient(var(--line) 0 100%)";
+      $("#intent-donut").setAttribute("aria-label", intents.length ? intents.map((item) => `${item.name} ${Math.round(item.count / total * 100)} percent`).join(", ") : "No recorded query intents");
+      const intentList = $("#intent-list");
+      intentList.replaceChildren();
+      intents.forEach((item, index) => {
+        const row = document.createElement("div");
+        row.className = "intent-row";
+        const dot = document.createElement("i");
+        dot.className = "intent-dot";
+        dot.style.setProperty("--intent-color", colors[index % colors.length]);
+        const label = document.createElement("span");
+        label.append(dot, document.createTextNode(item.name));
+        const count = document.createElement("b");
+        count.textContent = `${item.count} · ${Math.round(item.count / total * 100)}%`;
+        row.append(label, count);
+        intentList.append(row);
+      });
+      const gate = document.createElement("div");
+      gate.className = "gate-range";
+      gate.append("Observed dynamic threshold range", document.createElement("br"));
+      const range = document.createElement("strong");
+      range.textContent = thresholds.min === null || thresholds.max === null ? "No adaptive runs yet" : `${Number(thresholds.min).toFixed(2)} — ${Number(thresholds.max).toFixed(2)}`;
+      gate.append(range);
+      intentList.append(gate);
+      drawTokenChart(data.performance || []);
+      const heatmap = $("#heatmap");
+      heatmap.replaceChildren();
+      const activity = data.activity || [];
+      $("#analytics-empty").hidden = activity.length > 0;
+      activity.forEach((run) => {
+        const hasSavings = typeof run.saved_percent === "number" && Number.isFinite(run.saved_percent);
+        const savings = hasSavings ? run.saved_percent : null;
+        const level = !hasSavings || savings < 10 ? 0 : savings < 25 ? 1 : savings < 45 ? 2 : savings < 65 ? 3 : 4;
+        const cell = document.createElement("button");
+        cell.type = "button";
+        cell.className = "heat-cell";
+        cell.dataset.level = String(level);
+        cell.setAttribute("role", "gridcell");
+        cell.setAttribute("aria-label", `Run #${run.run_number}: ${hasSavings ? `${savings.toFixed(1)}% tokens saved` : "token savings unavailable"}, ${run.coref_edges} coreference edges`);
+        const latency = run.latency_saved_ms === null ? "N/A" : `${Number(run.latency_saved_ms).toFixed(0)}ms saved`;
+        cell.title = `Run #${run.run_number} | Saved ${hasSavings ? `${savings.toFixed(1)}% tokens` : "N/A"} | Coref edges: ${run.coref_edges} | Latency: ${latency}`;
+        heatmap.append(cell);
+      });
+    }
+    async function loadAnalytics() {
+      const response = await fetch("/analytics");
+      const result = await response.json();
+      if (!response.ok) throw new Error(typeof result.detail === "string" ? result.detail : `Analytics request failed (HTTP ${response.status}).`);
+      renderAnalytics(result);
+    }
+    loadAnalytics().catch((error) => {
+      $("#analytics-run-count").textContent = error instanceof Error ? `Analytics unavailable: ${error.message}` : "Analytics unavailable";
+    });
+    function setAnswer(id, value) {
+      const element = $(id);
+      element.textContent = value || "No answer was returned.";
+      element.classList.toggle("placeholder", !value);
+    }
+    function resetOutput() {
+      latestResult = null;
+      $("#context-baseline").textContent = "Run a comparison to inspect the full context.";
+      $("#context-compressed").textContent = "Retained sentences will be highlighted in emerald after a run.";
+      $("#retained-label").textContent = "Awaiting run";
+      setAnswer("#answer-baseline", "");
+      setAnswer("#answer-compressed", "");
+      ["#baseline-prompt", "#baseline-completion", "#baseline-latency", "#compressed-prompt", "#compressed-completion", "#compressed-latency", "#detail-baseline", "#detail-compressed", "#detail-latency"].forEach((selector) => { $(selector).textContent = "—"; });
+      $("#savings-value").innerHTML = "—<small>Groq usage</small>";
+      $("#savings-caption").textContent = "Run a paired comparison to see provider-reported usage and sentence pruning.";
+      $("#audit-summary").textContent = "Per-sentence score audit · run comparison to inspect";
+      $("#audit-rows").replaceChildren();
+      const emptyRow = document.createElement("tr");
+      const emptyCell = document.createElement("td");
+      emptyCell.colSpan = 7;
+      emptyCell.textContent = "No audit available yet.";
+      emptyRow.append(emptyCell);
+      $("#audit-rows").append(emptyRow);
+      $("#run-summary").textContent = "No comparison run yet.";
+      $("#run-status").textContent = "READY";
+      $("#run-status").classList.remove("done");
+    }
+    function splitPassageSentences(text) {
+      const normalized = text.trim().replace(/\s+/g, " ");
+      const sentences = [];
+      const boundary = /[.!?]\s+/g;
+      let start = 0;
+      let match;
+      while ((match = boundary.exec(normalized)) !== null) {
+        const end = boundary.lastIndex - match[0].match(/\s+$/)[0].length;
+        sentences.push(normalized.slice(start, end).trim());
+        start = boundary.lastIndex;
+      }
+      if (start < normalized.length) sentences.push(normalized.slice(start).trim());
+      return sentences.filter(Boolean);
+    }
+    function renderContext(documents, retainedIndices) {
+      const container = $("#context-compressed");
+      container.replaceChildren();
+      const keep = new Set(retainedIndices || []);
+      let sentenceIndex = 0;
+      documents.forEach((passage, passageIndex) => {
+        if (passageIndex) container.append(document.createTextNode("\n\n"));
+        const sentences = splitPassageSentences(passage);
+        sentences.forEach((sentence, index) => {
+          if (index) container.append(document.createTextNode(" "));
+          const span = document.createElement("span");
+          span.className = keep.has(sentenceIndex) ? "retained" : "pruned";
+          span.textContent = sentence.trim();
+          const audit = latestResult?.sentence_audit?.find((item) => item.sentence_index === sentenceIndex);
+          if (audit) {
+            span.title = `Isolated score: ${Number(audit.isolated_score).toFixed(3)} · Pairwise gain: ${Number(audit.pairwise_gain).toFixed(3)} · Final weight: ${Number(audit.final_weight).toFixed(3)} · ${audit.retained ? audit.retention_reason : audit.discard_reason}`;
+          }
+          container.append(span);
+          sentenceIndex += 1;
+        });
+      });
+    }
+    function renderSentenceAudit(audit) {
+      const rows = $("#audit-rows");
+      rows.replaceChildren();
+      const entries = Array.isArray(audit) ? audit : [];
+      $("#audit-summary").textContent = `Per-sentence score audit · ${entries.length} candidate sentences`;
+      if (!entries.length) {
+        const row = document.createElement("tr");
+        const cell = document.createElement("td");
+        cell.colSpan = 7;
+        cell.textContent = "The API returned no sentence audit entries.";
+        row.append(cell);
+        rows.append(row);
+        return;
+      }
+      entries.forEach((entry) => {
+        const row = document.createElement("tr");
+        const values = [
+          { text: String(Number(entry.sentence_index) + 1) },
+          { text: entry.text || "", className: "audit-text" },
+          { text: Number(entry.isolated_score).toFixed(3), className: "audit-score" },
+          { text: Number(entry.pairwise_gain).toFixed(3), className: "audit-score" },
+          { text: Number(entry.final_weight).toFixed(3), className: "audit-score" },
+          { text: entry.retained ? `Retained · group ${entry.atomic_group_id}` : "Discarded", className: entry.retained ? "audit-kept" : "audit-discarded" },
+          { text: entry.retained ? (entry.retention_reason || "Retained by compressor.") : (entry.discard_reason || "Not selected."), className: "audit-reason" }
+        ];
+        values.forEach((value) => {
+          const cell = document.createElement("td");
+          cell.textContent = value.text;
+          if (value.className) cell.className = value.className;
+          row.append(cell);
+        });
+        rows.append(row);
+      });
+    }
+    $("#compress-only").addEventListener("click", async () => {
+      const query = $("#query").value.trim();
+      const documents = $("#documents").value.split(/\n\s*\n/).map((item) => item.trim()).filter(Boolean);
+      if (!query || !documents.length) {
+        errorBox.textContent = "Enter a query and at least one retrieved passage.";
+        errorBox.classList.add("visible");
+        return;
+      }
+      errorBox.classList.remove("visible");
+      const payload = {
+        query, documents, top_k: Number($("#top-k").value), max_tokens: Number($("#max-tokens").value),
+        enable_coref: $("#enable-coref").checked, enable_multihop: $("#enable-multihop").checked,
+        adaptive_gating: adaptiveInput.checked
+      };
+      if (!payload.adaptive_gating) payload.threshold = Number(thresholdInput.value);
+      const button = $("#compress-only");
+      button.disabled = true;
+      button.textContent = "Compressing…";
+      $("#run-status").textContent = "COMPRESSING";
+      try {
+        const response = await fetch("/compress", {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(typeof result.detail === "string" ? result.detail : `Compression failed (HTTP ${response.status}).`);
+        resetOutput();
+        latestResult = result;
+        renderSentenceAudit(result.sentence_audit);
+        $("#context-baseline").textContent = documents.join("\n\n");
+        renderContext(documents, result.retained_sentence_indices);
+        $("#retained-label").textContent = `${result.retained_sentence_indices.length} sentences retained`;
+        $("#compressed-prompt").textContent = formatCount(result.estimated_compressed_word_count);
+        $("#baseline-prompt").textContent = formatCount(result.estimated_original_word_count);
+        $("#savings-title").textContent = "Estimated context reduction";
+        $("#savings-value").innerHTML = `${Number(result.estimated_word_reduction_percent).toFixed(1)}%<small>estimated words · not provider tokens</small>`;
+        $("#savings-caption").textContent = `${result.retained_sentence_indices.length} sentences retained · compression-only mode does not call Groq.`;
+        $("#run-summary").textContent = `${String(result.query_intent_type).replace("_", " ")} intent · τ ${Number(result.dynamic_threshold_used).toFixed(2)} · ${result.preserved_coreferences_count} discourse edges`;
+        $("#run-status").textContent = "COMPLETE";
+        $("#run-status").classList.add("done");
+        $("#save-message").textContent = "Compression-only pass complete. No LLM requests or workbook row were created.";
+      } catch (error) {
+        errorBox.textContent = error instanceof Error ? error.message : "Compression failed.";
+        errorBox.classList.add("visible");
+        $("#run-status").textContent = "ERROR";
+      } finally {
+        button.disabled = false;
+        button.textContent = "Compress only";
+      }
+    });
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const query = $("#query").value.trim();
+      const documents = $("#documents").value.split(/\n\s*\n/).map((item) => item.trim()).filter(Boolean);
+      const expectedAnswer = $("#expected-answer").value.trim();
+      errorBox.classList.remove("visible");
+      errorBox.textContent = "";
+      if (!query || !documents.length) {
+        errorBox.textContent = "Enter a query and at least one retrieved passage.";
+        errorBox.classList.add("visible");
+        return;
+      }
+      const payload = {
+        query, documents, expected_answer: expectedAnswer || null, test_case: activeCaseName || null,
+        top_k: Number($("#top-k").value), max_tokens: Number($("#max-tokens").value),
+        enable_coref: $("#enable-coref").checked, enable_multihop: $("#enable-multihop").checked,
+        adaptive_gating: adaptiveInput.checked
+      };
+      if (!payload.adaptive_gating) payload.threshold = Number(thresholdInput.value);
+      if ((!payload.adaptive_gating && (!Number.isFinite(payload.threshold) || payload.threshold < .1 || payload.threshold > 1)) || payload.top_k < 1 || payload.top_k > 10 || payload.max_tokens < 64 || payload.max_tokens > 1024) {
+        errorBox.textContent = "Use τ between 0.10 and 1.00, Top-K from 1 to 10, and a budget from 64 to 1,024.";
+        errorBox.classList.add("visible");
+        return;
+      }
+      runButton.disabled = true;
+      runButton.textContent = "Compressing and comparing…";
+      $("#run-status").textContent = "RUNNING";
+      const started = performance.now();
+      try {
+        const response = await fetch("/compare", {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
+        });
+        let result;
+        try { result = await response.json(); } catch { result = null; }
+        if (!response.ok) {
+          const detail = result && typeof result.detail === "string" ? result.detail : `Comparison failed (HTTP ${response.status}).`;
+          throw new Error(detail);
+        }
+        if (!result || typeof result.compressed_text !== "string") throw new Error("The API returned an invalid comparison response.");
+        latestResult = result;
+        renderSentenceAudit(result.sentence_audit);
+        $("#model-pill").textContent = `Groq · ${result.model || "configured model"}`;
+        $("#context-baseline").textContent = documents.join("\n\n");
+        renderContext(documents, result.retained_sentence_indices);
+        $("#retained-label").textContent = `${(result.retained_sentence_indices || []).length} sentences retained`;
+        setAnswer("#answer-baseline", result.without_compressor_answer);
+        setAnswer("#answer-compressed", result.with_compressor_answer);
+        $("#baseline-prompt").textContent = formatCount(result.without_compressor_prompt_tokens);
+        $("#baseline-completion").textContent = formatCount(result.without_compressor_completion_tokens);
+        $("#baseline-latency").textContent = `${Number(result.without_compressor_llm_latency_ms).toFixed(0)} ms`;
+        $("#compressed-prompt").textContent = formatCount(result.with_compressor_prompt_tokens);
+        $("#compressed-completion").textContent = formatCount(result.with_compressor_completion_tokens);
+        $("#compressed-latency").textContent = `${Number(result.with_compressor_llm_latency_ms).toFixed(0)} ms`;
+        $("#detail-baseline").textContent = formatCount(result.without_compressor_prompt_tokens);
+        $("#detail-compressed").textContent = formatCount(result.with_compressor_prompt_tokens);
+        const latencyDelta = Number(result.without_compressor_llm_latency_ms) - Number(result.with_compressor_llm_latency_ms);
+        $("#detail-latency").textContent = `${latencyDelta >= 0 ? "+" : ""}${latencyDelta.toFixed(0)} ms`;
+        $("#savings-title").textContent = "Actual prompt-token savings";
+        $("#savings-value").innerHTML = `${formatCount(result.actual_prompt_tokens_saved)}<small>${result.actual_prompt_token_reduction_percent === null ? "tokens · Groq usage" : `${Number(result.actual_prompt_token_reduction_percent).toFixed(1)}% reduction`}</small>`;
+        const retainedCount = (result.retained_sentence_indices || []).length;
+        const originalSentenceCount = documents.reduce((sum, document) => sum + splitPassageSentences(document).length, 0);
+        $("#savings-caption").textContent = `${retainedCount} of ${originalSentenceCount} source sentences retained · ${formatCount(result.actual_prompt_tokens_saved)} actual prompt tokens saved`;
+        $("#run-summary").textContent = `${String(result.query_intent_type || "factual").replace("_", " ")} intent · complexity ${Number(result.query_complexity_score).toFixed(2)} · τ ${Number(result.dynamic_threshold_used).toFixed(2)} · ${Number(result.preserved_coreferences_count)} discourse edges`;
+        $("#run-status").textContent = "COMPLETE";
+        $("#run-status").classList.add("done");
+        $("#save-message").textContent = result.metrics_saved ? `Paired metrics appended to reports/eval_met.xlsx · UI round trip ${(performance.now() - started).toFixed(0)} ms.` : (result.metrics_save_error || "Comparison completed, but metric logging failed.");
+        if (!result.metrics_saved) $("#save-message").style.color = "var(--red)";
+        else $("#save-message").style.color = "";
+        loadAnalytics().catch((error) => {
+          $("#analytics-run-count").textContent = error instanceof Error ? `Analytics unavailable: ${error.message}` : "Analytics unavailable";
+        });
+      } catch (error) {
+        errorBox.textContent = error instanceof Error ? error.message : "Comparison failed.";
+        errorBox.classList.add("visible");
+        $("#run-status").textContent = "ERROR";
+        showToast("The paired comparison did not complete.");
+      } finally {
+        runButton.disabled = false;
+        runButton.innerHTML = "Run paired RAG comparison&nbsp; →";
+      }
+    });
+
+    document.querySelectorAll(".result-tab").forEach((tab) => tab.addEventListener("click", () => {
+      document.querySelectorAll(".result-tab").forEach((button) => button.setAttribute("aria-selected", String(button === tab)));
+      document.querySelectorAll(".result-panel").forEach((panel) => panel.classList.toggle("active", panel.id === tab.getAttribute("aria-controls")));
+    }));
+
+    fetch("/config").then((response) => {
+      if (!response.ok) throw new Error("Unable to read API configuration.");
+      return response.json();
+    }).then((config) => {
+      const service = $("#service-state");
+      service.classList.add("online");
+      $("#service-label").textContent = config.groq_configured ? "API Online · Groq" : "API Online · key needed";
+      $("#model-pill").textContent = `Groq · ${config.model}`;
+      $("#run-status").textContent = config.groq_configured ? "READY" : "KEY REQUIRED";
+      $("#footer-api-status").lastChild.textContent = config.groq_configured ? ` Limas API Online · ${config.model}` : " Limas API Online · Groq key needed";
+    }).catch(() => {
+      $("#service-state").classList.add("offline");
+      $("#service-label").textContent = "Compressor API offline";
+      $("#run-status").textContent = "API OFFLINE";
+      $("#footer-api-status").lastChild.textContent = " Limas API offline";
+    });
+
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if ("IntersectionObserver" in window) {
+      const revealObserver = new IntersectionObserver((entries, observer) => entries.forEach((entry) => {
+        if (entry.isIntersecting) { entry.target.classList.add("visible"); observer.unobserve(entry.target); }
+      }), { threshold: .14 });
+      document.querySelectorAll(".reveal").forEach((element) => revealObserver.observe(element));
+    } else document.querySelectorAll(".reveal").forEach((element) => element.classList.add("visible"));
+    const counters = document.querySelectorAll(".count-up");
+    if ("IntersectionObserver" in window && !reducedMotion) {
+      const counterObserver = new IntersectionObserver((entries, observer) => entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        const element = entry.target;
+        const goal = Number(element.dataset.value);
+        const decimals = Number(element.dataset.decimals);
+        const start = performance.now();
+        const tick = (now) => {
+          const progress = Math.min(1, (now - start) / 1050);
+          const eased = 1 - Math.pow(1 - progress, 3);
+          element.textContent = (goal * eased).toFixed(decimals);
+          if (progress < 1) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+        observer.unobserve(element);
+      }), { threshold: .6 });
+      counters.forEach((element) => counterObserver.observe(element));
+    } else counters.forEach((element) => { element.textContent = Number(element.dataset.value).toFixed(Number(element.dataset.decimals)); });
+
+    const canvas = $("#particle-canvas");
+    const ctx = canvas.getContext("2d");
+    let particles = [];
+    function resizeCanvas() {
+      const rect = canvas.getBoundingClientRect();
+      const scale = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.max(1, Math.floor(rect.width * scale));
+      canvas.height = Math.max(1, Math.floor(rect.height * scale));
+      ctx.setTransform(scale, 0, 0, scale, 0, 0);
+      particles = Array.from({ length: Math.min(48, Math.floor(rect.width / 23)) }, () => ({
+        x: Math.random() * rect.width, y: Math.random() * rect.height,
+        vx: (Math.random() - .5) * .17, vy: (Math.random() - .5) * .17
+      }));
+    }
+    function drawParticles() {
+      if (!ctx || reducedMotion) return;
+      const rect = canvas.getBoundingClientRect();
+      ctx.clearRect(0, 0, rect.width, rect.height);
+      const dark = document.documentElement.dataset.theme === "dark";
+      const color = dark ? "148,139,255" : "81,69,229";
+      particles.forEach((particle, index) => {
+        particle.x += particle.vx; particle.y += particle.vy;
+        if (particle.x < 0 || particle.x > rect.width) particle.vx *= -1;
+        if (particle.y < 0 || particle.y > rect.height) particle.vy *= -1;
+        ctx.fillStyle = `rgba(${color},.42)`;
+        ctx.beginPath(); ctx.arc(particle.x, particle.y, 1.35, 0, Math.PI * 2); ctx.fill();
+        for (let otherIndex = index + 1; otherIndex < particles.length; otherIndex += 1) {
+          const other = particles[otherIndex];
+          const distance = Math.hypot(particle.x - other.x, particle.y - other.y);
+          if (distance < 95) {
+            ctx.strokeStyle = `rgba(${color},${.12 * (1 - distance / 95)})`;
+            ctx.lineWidth = .7; ctx.beginPath(); ctx.moveTo(particle.x, particle.y); ctx.lineTo(other.x, other.y); ctx.stroke();
+          }
+        }
+      });
+      requestAnimationFrame(drawParticles);
+    }
+    resizeCanvas();
+    if (!reducedMotion) requestAnimationFrame(drawParticles);
+    window.addEventListener("resize", resizeCanvas, { passive: true });
+    const sections = [...document.querySelectorAll("main section[id]")];
+    if ("IntersectionObserver" in window) {
+      const navObserver = new IntersectionObserver((entries) => entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        document.querySelectorAll(".nav-links a").forEach((link) => link.classList.toggle("active", link.getAttribute("href") === `#${entry.target.id}`));
+      }), { rootMargin: "-25% 0px -65% 0px" });
+      sections.forEach((section) => navObserver.observe(section));
+    }
+  </script>
+</body>
+</html>
