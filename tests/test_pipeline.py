@@ -22,6 +22,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
+if str(ROOT / "tests") not in sys.path:
+    sys.path.insert(0, str(ROOT / "tests"))
 
 from fastapi.testclient import TestClient
 from openpyxl import Workbook, load_workbook
@@ -42,6 +44,7 @@ from context_compressor.service.groq_client import (
     GroqRequestError,
 )
 from context_compressor.service.groq_client import generate_answer
+from test_retrieval_pipeline import RetrievalPipelineTests
 
 RESULT_PATH = ROOT / "reports" / "pipeline_test_results.txt"
 

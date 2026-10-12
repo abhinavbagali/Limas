@@ -1,5 +1,5 @@
 === Limas Pipeline Test Report ===
-Timestamp: 2026-10-09T07:00:46Z
+Timestamp: 2026-10-12T03:51:04Z
 
 test_analytics_endpoint_aggregates_saved_workbook_metrics (__main__.ContextCompressorPipelineTests.test_analytics_endpoint_aggregates_saved_workbook_metrics) ... ok
 test_api_health_and_compression (__main__.ContextCompressorPipelineTests.test_api_health_and_compression) ... ok
@@ -25,11 +25,30 @@ test_sentence_audit_covers_retained_and_discarded_candidates (__main__.ContextCo
 test_sentence_splitter_basic (__main__.ContextCompressorPipelineTests.test_sentence_splitter_basic) ... ok
 test_single_logit_cross_encoder_scores_are_monotonic (__main__.ContextCompressorPipelineTests.test_single_logit_cross_encoder_scores_are_monotonic) ... skipped 'PyTorch is unavailable.'
 test_upload_endpoint_extracts_text_files_and_pdf_pages (__main__.ContextCompressorPipelineTests.test_upload_endpoint_extracts_text_files_and_pdf_pages) ... ok
+test_chunker_preserves_page_range_and_overlap (test_retrieval_pipeline.RetrievalPipelineTests.test_chunker_preserves_page_range_and_overlap) ... ok
+test_fifty_page_pdf_upload_and_chunking_keep_page_provenance (test_retrieval_pipeline.RetrievalPipelineTests.test_fifty_page_pdf_upload_and_chunking_keep_page_provenance) ... ok
+test_pdf_extractor_rejects_corrupt_input_with_diagnostic (test_retrieval_pipeline.RetrievalPipelineTests.test_pdf_extractor_rejects_corrupt_input_with_diagnostic) ... ok
+test_preflight_budget_truncates_only_overflow_context (test_retrieval_pipeline.RetrievalPipelineTests.test_preflight_budget_truncates_only_overflow_context) ... ok
+test_upload_index_retrieve_and_doc_id_compress_routes (test_retrieval_pipeline.RetrievalPipelineTests.test_upload_index_retrieve_and_doc_id_compress_routes) ... ok
+test_vector_store_caches_index_and_returns_ranked_provenance (test_retrieval_pipeline.RetrievalPipelineTests.test_vector_store_caches_index_and_returns_ranked_provenance) ... ok
 
 ----------------------------------------------------------------------
-Ran 24 tests in 0.198s
+Ran 30 tests in 0.425s
 
 OK (skipped=1)
 
-Summary: 24 tests run, 0 failed, 0 errors, 1 skipped
+Summary: 30 tests run, 0 failed, 0 errors, 1 skipped
 Status: PASS
+
+## Phase 4/5/11 verification (2026-10-12)
+
+- Runtime imports succeeded for PyTorch, Transformers, SentenceTransformers, psutil, and tiktoken. Pytest 9.1.1 was installed in the active Python 3.13 environment.
+- Real embedding verification: `sentence-transformers/all-MiniLM-L6-v2` loaded from Hugging Face and encoded a query/document text into a normalized 384-dimensional vector. A 50-page synthetic indexing run reported `embedding_backend=sentence-transformers`, 237 chunks, and real model identity.
+- Real reranker comparison, batch_size=16, CPU:
+  - `cross-encoder/ms-marco-MiniLM-L-6-v2`: 10/10 pairwise ordering accuracy (1.00), mean positive-minus-negative score 0.6647, 66.14 ms for ten two-candidate queries; 14.60 ms two-pair warm-up.
+  - `cross-encoder/stsb-roberta-base`: 9/10 pairwise ordering accuracy (0.90), mean positive-minus-negative score 0.2731, 287.41 ms for ten two-candidate queries; 28.78 ms two-pair warm-up.
+  - This is a hand-curated smoke comparison, not a representative benchmark corpus.
+- Startup uses FastAPI lifespan to preload MiniLM and the MS MARCO reranker once per API process. The scorer batches pair inference at 16. `/index` samples/logs process RSS via psutil.
+- Synthetic 50-page index RSS profile with real MiniLM: start 1,140.84 MB, peak 1,396.55 MB, end 1,278.40 MB (under 10 GB). This was synthetic page text, not a corpus document.
+- `python -m pytest tests/ -q -p no:cacheprovider` with approved filesystem access: 36 passed, 0 failed, 0 skipped (22.81 s). The initial sandboxed run failed three XLSX temporary-file writes due to filesystem restrictions; the rerun passed.
+- Phase 10 remains pending because the workspace contains no representative 4-10, 20-30, or 50+ page PDFs and labeled queries/reference answers. No fabricated benchmark rows were added to `reports/eval_met.xlsx`; `scripts/evaluate_pipeline.py` requires the corpus case manifest to produce multi-document rows.

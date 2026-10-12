@@ -962,3 +962,51 @@ performance estimates. The latest validation ran 24 backend tests, passed the
 frontend production build and TypeScript check, and checked browser interactions
 without a live Groq call. The research heuristics and score blends are not a
 validated entailment/coreference system or proof of improved QA accuracy.
+
+## 16. Retrieval and Long-PDF Enhancement Update (2026-10-12)
+
+This subsection records the implementation added after the project snapshot above. The original sections are retained as written; this is an appended update.
+
+### Implemented retrieval path
+
+The service now supports an optional document-index workflow alongside the existing raw-passage workflow:
+
+```text
+PDF/TXT upload -> page-aware extraction -> overlapping chunks -> MiniLM vectors
+               -> top-k retrieval -> cross-encoder reranking -> compression
+```
+
+- `POST /upload_pdf` continues to accept PDF and UTF-8 text uploads and returns a `doc_id`, extracted pages, and page provenance. Scanned PDFs still need OCR before upload.
+- `POST /index` chunks the uploaded document, stores a process-local index, and reports the embedding backend/model. `/retrieve` performs dense candidate retrieval and optional cross-encoder reranking. `/compress` and `/compare` accept `doc_id` as well as the legacy `documents` passage array.
+- PDF page ranges and retrieval/rerank ranks and scores are carried into retrieved chunks and the sentence audit. The index and uploaded document cache are process-local and reset when the API process restarts.
+- Existing passage-array routes remain supported. No CSS or Tailwind styling was changed for the retrieval integration.
+
+### Model lifecycle and inference verification
+
+- FastAPI lifespan preloads `sentence-transformers/all-MiniLM-L6-v2` and the MS MARCO cross-encoder once at server startup. Reranker instances are cached by model name. Cross-encoder scoring uses batches of 16 sentence pairs.
+- Real model inference was verified from the local Hugging Face cache: MiniLM returned normalized 384-dimensional embeddings and `/index` reported the `sentence-transformers` backend. The offline hashing implementation remains a development fallback if model loading is unavailable; fallback results are not dense semantic retrieval.
+- A hand-curated 10-query/20-candidate smoke comparison on CPU produced these results (latency for ten two-candidate queries):
+
+| Cross-encoder | Pairwise accuracy | Mean positive-minus-negative score | Total scoring latency |
+|---|---:|---:|---:|
+| `cross-encoder/ms-marco-MiniLM-L-6-v2` | 1.00 (10/10) | 0.6647 | 66.14 ms |
+| `cross-encoder/stsb-roberta-base` | 0.90 (9/10) | 0.2731 | 287.41 ms |
+
+These measurements are a small smoke comparison, not a representative or statistically controlled reranker benchmark. A labeled retrieval dataset is needed for defensible accuracy claims.
+
+### Startup memory and index profiling
+
+`POST /index` samples process RSS with psutil and returns/logs start, peak, and end memory values. On a synthetic 50-page indexing run using the real MiniLM model, the process used 1,140.84 MB at start, peaked at 1,396.55 MB, and ended at 1,278.40 MB. This is below the 10 GB target for that synthetic run; it is not a profile of a representative production PDF corpus.
+
+### Evaluation status and recorded metrics
+
+`scripts/evaluate_pipeline.py` runs four configurations: direct legacy Limas compression, retrieval only, retrieval plus Limas compression, and retrieval plus a top-four extractive baseline. It writes Recall@k, a lexical quality proxy, prompt-token reduction, and latency fields to the `retrieval_benchmark` worksheet in `reports/eval_met.xlsx`.
+
+The repository does not contain representative 4–10 page, 20–30 page, and 50+ page benchmark PDFs with labeled queries and reference answers. Therefore, no multi-length benchmark rows have been generated, and the full retrieval evaluation is still pending. The script expects a JSON case manifest with each PDF path, query, and optional reference answer. The earlier paired Groq workbook data remains a separate evaluation: its latest recorded 13 runs averaged 11.1% actual prompt-token reduction and -212.9 ms net latency saved. Those values describe that small paired sample, not the retrieval benchmark or a general performance guarantee.
+
+### Verification update
+
+- `pytest tests/`: 36 passed, 0 failed, and 0 skipped after the model dependencies were available.
+- `git diff --check` passed.
+- Frontend TypeScript check and production build passed earlier in this implementation sequence; existing bundle-size and unused-import warnings remain.
+- The project is a working local prototype. It has not completed the corpus-based multi-length retrieval evaluation and should not be presented as having validated long-document QA quality or factual equivalence.

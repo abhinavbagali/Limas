@@ -8,6 +8,19 @@ export interface SentenceAudit {
   atomic_group_id: number | null;
   retention_reason: string | null;
   discard_reason: string | null;
+  doc_id?: string | null;
+  page_start?: number | null;
+  page_end?: number | null;
+  retrieval_rank?: number | null;
+  rerank_rank?: number | null;
+  retrieval_score?: number | null;
+  rerank_score?: number | null;
+}
+
+export interface RetrievedChunk {
+  chunk_id: string; doc_id: string; text: string; page_start: number; page_end: number;
+  section_title: string | null; token_count: number; retrieval_score: number;
+  retrieval_rank: number; rerank_score: number | null; rerank_rank: number | null;
 }
 
 export interface CompressResult {
@@ -22,6 +35,7 @@ export interface CompressResult {
   dynamic_threshold_used: number;
   preserved_coreferences_count: number;
   retained_sentence_indices: number[];
+  retrieved_chunks?: RetrievedChunk[];
 }
 
 export interface CompareResult extends CompressResult {
@@ -76,6 +90,14 @@ export interface UploadResult {
   filename: string;
   passages: string[];
   page_count: number;
+  doc_id: string;
+  pages: Array<{ doc_id: string; page_number: number; text: string; extraction_status: string; section_title: string | null }>;
+  indexed: boolean;
+}
+
+export interface IndexResult {
+  doc_id: string; page_count: number; chunk_count: number; embedding_backend: string;
+  embedding_model: string | null;
 }
 
 export interface CompressionOptions {
@@ -89,6 +111,9 @@ export interface CompressionOptions {
   enable_coref: boolean;
   enable_multihop: boolean;
   adaptive_gating: boolean;
+  doc_id?: string | null;
+  retrieval_top_k?: number;
+  rerank_top_k?: number;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -116,6 +141,14 @@ export function uploadDocument(file: File) {
   const body = new FormData();
   body.append("file", file);
   return request<UploadResult>("/upload_pdf", { method: "POST", body });
+}
+
+export function indexDocument(doc_id: string) {
+  return request<IndexResult>("/index", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ doc_id }) });
+}
+
+export function retrieveDocument(doc_id: string, query: string) {
+  return request<RetrievedChunk[]>("/retrieve", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ doc_id, query }) });
 }
 
 export function compressContext(options: CompressionOptions) {

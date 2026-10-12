@@ -20,6 +20,7 @@ import {
   compareContexts,
   compressContext,
   uploadDocument,
+  indexDocument,
   type CompareResult,
   type CompressionOptions,
   type CompressResult,
@@ -88,7 +89,7 @@ function AuditContext({
                       className={audit.retained ? "sentence-kept" : "sentence-pruned"}
                       tabIndex={0}
                     >
-                      {sentence}{" "}
+                      {audit.page_start ? `[p. ${audit.page_start}${audit.page_end && audit.page_end !== audit.page_start ? `–${audit.page_end}` : ""} · rank ${audit.rerank_rank ?? audit.retrieval_rank ?? "—"}] ` : ""}{sentence}{" "}
                     </span>
                   </Tooltip.Trigger>
                   <Tooltip.Portal>
@@ -99,6 +100,8 @@ function AuditContext({
                       <span>Isolated score: {audit.isolated_score.toFixed(3)}</span>
                       <span>Pairwise gain: {audit.pairwise_gain.toFixed(3)}</span>
                       <span>Final weight: {audit.final_weight.toFixed(3)}</span>
+                      {audit.retrieval_rank != null && <span>Retrieval rank: {audit.retrieval_rank} · score {audit.retrieval_score?.toFixed(3)}</span>}
+                      {audit.rerank_rank != null && <span>Rerank rank: {audit.rerank_rank} · score {audit.rerank_score?.toFixed(3)}</span>}
                       <span>
                         {audit.retained ? audit.retention_reason : audit.discard_reason}
                       </span>
@@ -119,6 +122,7 @@ export function Playground({ model, groqConfigured, onRunComplete }: PlaygroundP
   const [query, setQuery] = useState(scenarios.climate.query);
   const [documentsText, setDocumentsText] = useState(scenarios.climate.documents);
   const [reference, setReference] = useState(scenarios.climate.expected);
+  const [docId, setDocId] = useState<string | null>(null);
   const [scenario, setScenario] = useState<keyof typeof scenarios | "custom">("climate");
   const [features, setFeatures] = useState({ coref: true, multihop: true, adaptive: true });
   const [manualOverride, setManualOverride] = useState(false);
@@ -136,8 +140,12 @@ export function Playground({ model, groqConfigured, onRunComplete }: PlaygroundP
     .split(/\n\s*\n/)
     .map((passage) => passage.trim())
     .filter(Boolean);
+  const displayedDocuments = result?.retrieved_chunks?.length
+    ? result.retrieved_chunks.map((chunk) => chunk.text)
+    : documents;
 
   function loadScenario(value: string) {
+    setDocId(null);
     if (value === "custom") {
       setScenario("custom");
       setQuery("");
@@ -166,6 +174,7 @@ export function Playground({ model, groqConfigured, onRunComplete }: PlaygroundP
       enable_coref: features.coref,
       enable_multihop: features.multihop,
       adaptive_gating: features.adaptive,
+      doc_id: docId,
     };
     if (!features.adaptive || manualOverride) options.threshold = threshold;
     return options;
@@ -215,11 +224,13 @@ export function Playground({ model, groqConfigured, onRunComplete }: PlaygroundP
     setBusy("upload");
     try {
       const uploaded = await uploadDocument(file);
+      const indexed = await indexDocument(uploaded.doc_id);
+      setDocId(uploaded.doc_id);
       setDocumentsText(uploaded.passages.join("\n\n"));
       setScenario("custom");
       setResult(null);
       setNotice(
-        `Loaded ${uploaded.passages.length} passage${uploaded.passages.length === 1 ? "" : "s"} from ${uploaded.filename} (${uploaded.page_count} pages).`,
+        `Loaded ${uploaded.filename} (${uploaded.page_count} pages); indexed ${indexed.chunk_count} chunks using ${indexed.embedding_backend}.`,
       );
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Document upload failed.");
@@ -314,7 +325,7 @@ export function Playground({ model, groqConfigured, onRunComplete }: PlaygroundP
             <label className="field-label" htmlFor="query">User query <span>QUERY</span></label>
             <textarea id="query" className="query-input" value={query} onChange={(event) => { setQuery(event.target.value); setScenario("custom"); }} placeholder="What do you want to know?" />
             <div className="field-label documents-label"><label htmlFor="documents">Retrieved passages</label><span>{documents.length} passage{documents.length === 1 ? "" : "s"}</span></div>
-            <textarea id="documents" className="documents-input" value={documentsText} onChange={(event) => { setDocumentsText(event.target.value); setScenario("custom"); }} placeholder="Paste retrieved documents. Separate passages with blank lines." />
+            <textarea id="documents" className="documents-input" value={documentsText} onChange={(event) => { setDocumentsText(event.target.value); setScenario("custom"); setDocId(null); }} placeholder="Paste retrieved documents. Separate passages with blank lines." />
             <div
               className="upload-zone"
               role="button"
@@ -367,7 +378,7 @@ export function Playground({ model, groqConfigured, onRunComplete }: PlaygroundP
             <div className="result-card-heading"><span className="result-icon"><FileText size={15} /></span><div><h4>Baseline RAG</h4><p>Full retrieved context</p></div><span className="result-tag">ORIGINAL</span></div>
             <Tabs.Content value="context" className="result-content">
               <div className="content-label">UNCOMPRESSED CONTEXT</div>
-              <p className="context-copy">{documentsText || "Retrieved passages will appear here."}</p>
+              <p className="context-copy">{displayedDocuments.join("\n\n") || "Retrieved passages will appear here."}</p>
             </Tabs.Content>
             <Tabs.Content value="answer" className="result-content answer-content">
               <div className="content-label">BASELINE GROQ ANSWER</div>
@@ -385,7 +396,7 @@ export function Playground({ model, groqConfigured, onRunComplete }: PlaygroundP
               {result ? (
                 <>
                   <div className="content-label">RETAINED <span className="inline-legend"><i /> PRUNED <i className="red-dot" /></span></div>
-                  <AuditContext result={result} documents={documents} />
+                  <AuditContext result={result} documents={displayedDocuments} />
                 </>
               ) : (
                 <div className="empty-output"><Scissors size={22} /><span>Your sentence-level diff will appear here.</span><small>Retained context is green; pruned sentences are struck through.</small></div>

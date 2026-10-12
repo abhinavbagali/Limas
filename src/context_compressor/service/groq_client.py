@@ -3,7 +3,9 @@ from __future__ import annotations
 import logging
 import os
 import time
+import math
 from dataclasses import dataclass
+from functools import lru_cache
 
 import httpx
 
@@ -11,6 +13,72 @@ logger = logging.getLogger(__name__)
 
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b"
+SYSTEM_PROMPT = (
+    "Answer the user's question using only the supplied context. "
+    "If the context does not contain the answer, say that the context "
+    "does not provide enough information. Do not invent facts."
+)
+MAX_COMPLETION_TOKENS = 1024
+
+
+@lru_cache(maxsize=1)
+def _token_codec():
+    try:
+        import tiktoken
+
+        try:
+            return tiktoken.encoding_for_model(get_groq_model())
+        except KeyError:
+            return tiktoken.get_encoding("o200k_base")
+    except Exception:
+        return None
+
+
+def estimate_prompt_tokens(query: str, context: str) -> int:
+    """Estimate the complete chat prompt; Groq usage remains authoritative."""
+    text = f"{SYSTEM_PROMPT}\nContext:\n{context or '[No context was retained.]'}\n\nQuestion:\n{query}"
+    codec = _token_codec()
+    if codec is not None:
+        return len(codec.encode(text)) + 12  # chat message framing allowance
+    return math.ceil(len(text.encode("utf-8")) / 3.0) + 12
+
+
+def fit_context_to_prompt_budget(query: str, documents: list[str], prompt_budget: int) -> tuple[list[str], bool]:
+    """Keep whole passages when possible, clipping only the final passage as needed."""
+    kept: list[str] = []
+    for document in documents:
+        candidate = kept + [document]
+        if estimate_prompt_tokens(query, "\n\n".join(candidate)) <= prompt_budget:
+            kept = candidate
+            continue
+        remaining = max(0, prompt_budget - estimate_prompt_tokens(query, "\n\n".join(kept)))
+        if remaining:
+            codec = _token_codec()
+            if codec is not None:
+                tokens = codec.encode(document)
+                low, high = 0, len(tokens)
+                while low < high:
+                    middle = (low + high + 1) // 2
+                    text = codec.decode(tokens[:middle])
+                    if estimate_prompt_tokens(query, "\n\n".join(kept + [text])) <= prompt_budget:
+                        low = middle
+                    else:
+                        high = middle - 1
+                fragment = codec.decode(tokens[:low]).strip()
+            else:
+                words = document.split()
+                low, high = 0, len(words)
+                while low < high:
+                    middle = (low + high + 1) // 2
+                    if estimate_prompt_tokens(query, "\n\n".join(kept + [" ".join(words[:middle])])) <= prompt_budget:
+                        low = middle
+                    else:
+                        high = middle - 1
+                fragment = " ".join(words[:low])
+            if fragment:
+                kept.append(fragment)
+        return kept, True
+    return kept, False
 
 
 class GroqConfigurationError(RuntimeError):
@@ -48,9 +116,7 @@ async def generate_answer(query: str, context: str) -> GenerationResult:
             {
                 "role": "system",
                 "content": (
-                    "Answer the user's question using only the supplied context. "
-                    "If the context does not contain the answer, say that the context "
-                    "does not provide enough information. Do not invent facts."
+                    SYSTEM_PROMPT
                 ),
             },
             {
@@ -59,7 +125,7 @@ async def generate_answer(query: str, context: str) -> GenerationResult:
             },
         ],
         "temperature": 0,
-        "max_completion_tokens": 1024,
+        "max_completion_tokens": MAX_COMPLETION_TOKENS,
     }
 
     start = time.perf_counter()

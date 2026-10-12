@@ -4,10 +4,13 @@ import asyncio
 import io
 import logging
 import os
+import threading
 import time
+from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
 from typing import List, Optional
+from uuid import uuid4
 
 from dotenv import load_dotenv
 from fastapi.responses import FileResponse
@@ -18,6 +21,10 @@ from pypdf import PdfReader
 from pypdf.errors import PdfReadError
 
 from ..compression.compressor import ContextCompressor
+from ..ingestion.chunker import TextChunk, chunk_pages
+from ..ingestion.pdf_extractor import PageMetadata, PdfIngestionError, extract_pdf_pages
+from ..retrieval.reranker import CrossEncoderReranker, MS_MARCO_MODEL
+from ..retrieval.vector_store import RetrievedChunk, VectorStore
 from ..evaluation.benchmark import _jaccard_similarity
 from ..evaluation.comparison_metrics import (
     DEFAULT_WORKBOOK,
@@ -29,6 +36,9 @@ from .groq_client import (
     GroqRequestError,
     generate_answer,
     get_groq_model,
+    estimate_prompt_tokens,
+    fit_context_to_prompt_budget,
+    MAX_COMPLETION_TOKENS,
 )
 
 logger = logging.getLogger(__name__)
@@ -37,7 +47,11 @@ load_dotenv(PROJECT_ROOT / ".env")
 
 class CompressRequest(BaseModel):
     query: str = Field(..., description="User query to evaluate the retrieved context against.")
-    documents: List[str] = Field(..., description="Retrieved document chunks or passages.")
+    documents: List[str] = Field(default_factory=list, description="Retrieved document chunks or passages.")
+    doc_id: Optional[str] = None
+    retrieval_top_k: int = Field(default=30, ge=1, le=200)
+    rerank_top_k: int = Field(default=8, ge=1, le=50)
+    token_aware_budget: bool = True
     threshold: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     top_k: Optional[int] = Field(default=None, ge=1)
     max_tokens: Optional[int] = Field(default=None, ge=1)
@@ -56,6 +70,12 @@ class SentenceAuditResponse(BaseModel):
     atomic_group_id: Optional[int]
     retention_reason: Optional[str]
     discard_reason: Optional[str]
+    doc_id: Optional[str] = None
+    page_start: Optional[int] = None
+    page_end: Optional[int] = None
+    retrieval_rank: Optional[int] = None
+    retrieval_score: Optional[float] = None
+    rerank_score: Optional[float] = None
 
 
 class CompressResponse(BaseModel):
@@ -78,11 +98,17 @@ class CompressResponse(BaseModel):
     isolated_scoring_latency_ms: float
     pairwise_scoring_latency_ms: float
     coreference_analysis_latency_ms: float
+    retrieved_chunks: List["RetrievalItemResponse"] = Field(default_factory=list)
 
 
 class CompareRequest(BaseModel):
     query: str = Field(..., min_length=1)
-    documents: List[str] = Field(..., min_length=1)
+    documents: List[str] = Field(default_factory=list)
+    doc_id: Optional[str] = None
+    retrieval_top_k: int = Field(default=30, ge=1, le=200)
+    rerank_top_k: int = Field(default=8, ge=1, le=50)
+    tpm_limit: int = Field(default=8000, ge=1024, le=100000)
+    token_aware_budget: bool = True
     test_case: Optional[str] = None
     expected_answer: Optional[str] = None
     threshold: Optional[float] = Field(default=None, ge=0.0, le=1.0)
@@ -130,12 +156,48 @@ class CompareResponse(BaseModel):
     with_compressor_answer_similarity: Optional[float]
     metrics_saved: bool
     metrics_save_error: Optional[str]
+    retrieved_chunks: List["RetrievalItemResponse"] = Field(default_factory=list)
+    preflight_prompt_token_budget: int
+    baseline_preflight_prompt_tokens: int
+    compressed_preflight_prompt_tokens: int
+    baseline_context_truncated: bool
 
 
 class UploadedDocumentResponse(BaseModel):
     filename: str
     passages: list[str]
     page_count: int
+    doc_id: str
+    pages: list[dict[str, object]]
+    indexed: bool = False
+
+
+class IndexRequest(BaseModel):
+    doc_id: str
+    target_tokens: int = Field(default=500, ge=100, le=1000)
+    overlap_tokens: int = Field(default=80, ge=0, le=200)
+
+
+class RetrieveRequest(BaseModel):
+    doc_id: str
+    query: str = Field(..., min_length=1)
+    top_k: int = Field(default=30, ge=1, le=200)
+    rerank_top_k: int = Field(default=8, ge=1, le=50)
+    reranker: str = MS_MARCO_MODEL
+
+
+class RetrievalItemResponse(BaseModel):
+    chunk_id: str
+    doc_id: str
+    text: str
+    page_start: int
+    page_end: int
+    section_title: Optional[str]
+    token_count: int
+    retrieval_score: float
+    retrieval_rank: int
+    rerank_score: Optional[float] = None
+    rerank_rank: Optional[int] = None
 
 
 def _numeric_values(rows: list[dict[str, object]], key: str) -> list[float]:
@@ -176,9 +238,65 @@ def _load_paired_analytics_rows() -> list[dict[str, object]]:
     ]
 
 
-app = FastAPI(title="Limas — Subcortical Context Compressor", version="0.1.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Load retrieval models once when the API process starts."""
+    vector_store._load_model()
+    _get_reranker(MS_MARCO_MODEL)
+    yield
+
+
+app = FastAPI(title="Limas — Subcortical Context Compressor", version="0.1.0", lifespan=lifespan)
 compressor = ContextCompressor()
+vector_store = VectorStore()
+rerankers: dict[str, CrossEncoderReranker] = {}
+document_pages: dict[str, list[PageMetadata]] = {}
+document_chunks: dict[str, list[TextChunk]] = {}
+document_chunk_config: dict[str, tuple[int, int]] = {}
 UI_PATH = Path(__file__).parent / "static" / "index.html"
+
+
+def _get_reranker(model_name: str) -> CrossEncoderReranker:
+    if model_name not in rerankers:
+        rerankers.clear()
+        rerankers[model_name] = CrossEncoderReranker(model_name)
+    return rerankers[model_name]
+
+
+def _resolve_context(doc_id: str, query: str, retrieval_top_k: int, rerank_top_k: int) -> tuple[list[str], list[RetrievedChunk], list[object]]:
+    candidates = vector_store.retrieve(doc_id, query, retrieval_top_k)
+    reranked = _get_reranker(MS_MARCO_MODEL).rerank(query, candidates, rerank_top_k)
+    selected: list[RetrievedChunk] = []
+    by_chunk = {item.chunk.chunk_id: item for item in candidates}
+    for item in reranked:
+        source = by_chunk[item.chunk.chunk_id]
+        selected.append(RetrievedChunk(item.chunk, source.score, item.retrieval_rank))
+    return [item.chunk.text for item in reranked], selected, reranked
+
+
+def _audit_provenance(audit: list[SentenceAuditResponse], ranked_chunks: list[object]) -> None:
+    from ..compression.sentence_splitter import split_document_into_sentences
+
+    provenance: list[tuple[str, int, int, int, float, float]] = []
+    for item in ranked_chunks:
+        chunk = item.chunk
+        for _ in split_document_into_sentences(chunk.text):
+            provenance.append((chunk.doc_id, chunk.page_start, chunk.page_end, item.retrieval_rank, item.retrieval_score, item.rerank_score))
+    for entry in audit:
+        if 0 <= entry.sentence_index < len(provenance):
+            entry.doc_id, entry.page_start, entry.page_end, entry.retrieval_rank, entry.retrieval_score, entry.rerank_score = provenance[entry.sentence_index]
+
+
+def _retrieval_response(ranked_chunks: list[object]) -> list[RetrievalItemResponse]:
+    return [
+        RetrievalItemResponse(
+            chunk_id=item.chunk.chunk_id, doc_id=item.chunk.doc_id, text=item.chunk.text,
+            page_start=item.chunk.page_start, page_end=item.chunk.page_end,
+            section_title=item.chunk.section_title, token_count=item.chunk.token_count,
+            retrieval_score=item.retrieval_score, retrieval_rank=item.retrieval_rank,
+            rerank_score=item.rerank_score, rerank_rank=item.rerank_rank,
+        ) for item in ranked_chunks
+    ]
 
 
 @app.get("/", include_in_schema=False)
@@ -220,25 +338,127 @@ def upload_document(file: UploadFile = File(...)) -> UploadedDocumentResponse:
         normalized_text = text.replace("\r\n", "\n").replace("\r", "\n")
         passages = [part.strip() for part in normalized_text.split("\n\n") if part.strip()]
         page_count = 1
+        doc_id = str(uuid4())
+        pages = [PageMetadata(doc_id, 1, normalized_text.strip(), "success" if normalized_text.strip() else "empty")]
     else:
         try:
-            reader = PdfReader(io.BytesIO(content))
-            passages = [
-                text.strip()
-                for page in reader.pages
-                if (text := page.extract_text() or "").strip()
-            ]
-        except (PdfReadError, OSError, ValueError) as exc:
+            pages = extract_pdf_pages(content, reader_factory=PdfReader)
+            doc_id = pages[0].doc_id
+            passages = [page.text for page in pages if page.text.strip()]
+        except PdfIngestionError as exc:
             logger.info("Could not parse uploaded PDF %s: %s", filename, exc)
-            raise HTTPException(status_code=422, detail="The uploaded PDF could not be parsed.") from exc
-        page_count = len(reader.pages)
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        page_count = len(pages)
 
     if not passages:
         raise HTTPException(
             status_code=422,
             detail="No extractable text was found. Scanned PDFs require OCR before upload.",
         )
-    return UploadedDocumentResponse(filename=filename, passages=passages, page_count=page_count)
+    document_pages[doc_id] = pages
+    document_chunks.pop(doc_id, None)
+    document_chunk_config.pop(doc_id, None)
+    return UploadedDocumentResponse(
+        filename=filename,
+        passages=passages,
+        page_count=page_count,
+        doc_id=doc_id,
+        pages=[asdict(page) for page in pages],
+    )
+
+
+@app.post("/index")
+def index_document(request: IndexRequest) -> dict[str, object]:
+    pages = document_pages.get(request.doc_id)
+    if pages is None:
+        raise HTTPException(status_code=404, detail="Document was not found in this API process. Upload it again.")
+    process = None
+    stop_sampling = threading.Event()
+    peak_rss_bytes = 0
+    try:
+        import psutil
+
+        process = psutil.Process()
+        peak_rss_bytes = process.memory_info().rss
+
+        def sample_rss() -> None:
+            nonlocal peak_rss_bytes
+            while not stop_sampling.wait(0.05):
+                try:
+                    peak_rss_bytes = max(peak_rss_bytes, process.memory_info().rss)
+                except Exception:
+                    logger.exception("Could not sample process RSS during indexing")
+                    return
+
+        sampler = threading.Thread(target=sample_rss, name="index-rss-sampler", daemon=True)
+        sampler.start()
+    except ImportError:
+        sampler = None
+        logger.warning("psutil is unavailable; skipping indexing memory profile")
+    rss_before = peak_rss_bytes
+    try:
+        chunks = chunk_pages(pages, request.target_tokens, request.overlap_tokens)
+        force_reindex = document_chunk_config.get(request.doc_id) != (
+            request.target_tokens,
+            request.overlap_tokens,
+        )
+        index = vector_store.index(request.doc_id, chunks, force=force_reindex)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    finally:
+        stop_sampling.set()
+        if sampler is not None:
+            sampler.join(timeout=1)
+        if process is not None:
+            peak_rss_bytes = max(peak_rss_bytes, process.memory_info().rss)
+    document_chunks[request.doc_id] = chunks
+    document_chunk_config[request.doc_id] = (request.target_tokens, request.overlap_tokens)
+    memory_profile = None
+    if process is not None:
+        memory_profile = {
+            "start_rss_mb": round(rss_before / (1024 * 1024), 2),
+            "peak_rss_mb": round(peak_rss_bytes / (1024 * 1024), 2),
+            "end_rss_mb": round(process.memory_info().rss / (1024 * 1024), 2),
+        }
+        logger.info("PDF indexing RSS profile doc_id=%s profile=%s", request.doc_id, memory_profile)
+    return {
+        "doc_id": request.doc_id,
+        "page_count": len(pages),
+        "chunk_count": len(chunks),
+        "target_tokens": request.target_tokens,
+        "overlap_tokens": request.overlap_tokens,
+        "embedding_backend": index.backend,
+        "embedding_model": vector_store.model_name if index.backend == "sentence-transformers" else None,
+        "memory_profile": memory_profile,
+    }
+
+
+@app.post("/retrieve", response_model=list[RetrievalItemResponse])
+def retrieve_document(request: RetrieveRequest) -> list[RetrievalItemResponse]:
+    if not vector_store.has_index(request.doc_id):
+        raise HTTPException(status_code=409, detail="Document is not indexed. Call POST /index first.")
+    candidates = vector_store.retrieve(request.doc_id, request.query, request.top_k)
+    try:
+        reranked = _get_reranker(request.reranker).rerank(request.query, candidates, request.rerank_top_k)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    retrieval_by_id = {item.chunk.chunk_id: item for item in candidates}
+    return [
+        RetrievalItemResponse(
+            chunk_id=item.chunk.chunk_id,
+            doc_id=item.chunk.doc_id,
+            text=item.chunk.text,
+            page_start=item.chunk.page_start,
+            page_end=item.chunk.page_end,
+            section_title=item.chunk.section_title,
+            token_count=item.chunk.token_count,
+            retrieval_score=retrieval_by_id[item.chunk.chunk_id].score,
+            retrieval_rank=retrieval_by_id[item.chunk.chunk_id].rank,
+            rerank_score=item.rerank_score,
+            rerank_rank=item.rerank_rank,
+        )
+        for item in reranked
+    ]
 
 
 @app.get("/analytics")
@@ -300,23 +520,40 @@ def analytics() -> dict[str, object]:
 
 @app.post("/compress", response_model=CompressResponse)
 async def compress(request: CompressRequest) -> CompressResponse:
+    ranked_chunks: list[object] = []
+    documents = request.documents
+    if request.doc_id:
+        if not vector_store.has_index(request.doc_id):
+            raise HTTPException(status_code=409, detail="Document is not indexed. Call POST /index first.")
+        documents, _, ranked_chunks = _resolve_context(request.doc_id, request.query, request.retrieval_top_k, request.rerank_top_k)
+    elif not documents:
+        raise HTTPException(status_code=422, detail="Provide documents or a doc_id.")
+    token_counter = None
+    if request.doc_id and request.token_aware_budget:
+        token_counter = lambda text: max(
+            0,
+            estimate_prompt_tokens(request.query, text)
+            - estimate_prompt_tokens(request.query, ""),
+        )
     result = compressor.compress(
         query=request.query,
-        documents=request.documents,
+        documents=documents,
         threshold=request.threshold,
         top_k=request.top_k,
         max_tokens=request.max_tokens,
         enable_coref=request.enable_coref,
         enable_multihop=request.enable_multihop,
         adaptive_gating=request.adaptive_gating,
+        token_counter=token_counter,
     )
+    sentence_audit = [SentenceAuditResponse(**asdict(item)) for item in result.sentence_audit]
+    if ranked_chunks:
+        _audit_provenance(sentence_audit, ranked_chunks)
     return CompressResponse(
         compressed_text=result.compressed_text,
         selected_sentences=result.selected_sentences,
         scores=result.scores,
-        sentence_audit=[
-            SentenceAuditResponse(**asdict(item)) for item in result.sentence_audit
-        ],
+        sentence_audit=sentence_audit,
         estimated_original_word_count=result.estimated_original_word_count,
         estimated_compressed_word_count=result.estimated_compressed_word_count,
         estimated_word_reduction_percent=result.estimated_word_reduction_percent,
@@ -332,6 +569,7 @@ async def compress(request: CompressRequest) -> CompressResponse:
         isolated_scoring_latency_ms=result.isolated_scoring_latency_ms,
         pairwise_scoring_latency_ms=result.pairwise_scoring_latency_ms,
         coreference_analysis_latency_ms=result.coreference_analysis_latency_ms,
+        retrieved_chunks=_retrieval_response(ranked_chunks),
     )
 
 
@@ -339,22 +577,69 @@ async def compress(request: CompressRequest) -> CompressResponse:
 async def compare(request: CompareRequest) -> CompareResponse:
     if not request.query.strip():
         raise HTTPException(status_code=422, detail="Query must not be blank.")
-    if any(not document.strip() for document in request.documents):
+    ranked_chunks: list[object] = []
+    documents = request.documents
+    if request.doc_id:
+        if not vector_store.has_index(request.doc_id):
+            raise HTTPException(status_code=409, detail="Document is not indexed. Call POST /index first.")
+        documents, _, ranked_chunks = _resolve_context(request.doc_id, request.query, request.retrieval_top_k, request.rerank_top_k)
+    elif not documents:
+        raise HTTPException(status_code=422, detail="Provide documents or a doc_id.")
+    if any(not document.strip() for document in documents):
         raise HTTPException(status_code=422, detail="Passages must not contain blank entries.")
 
+    # Split the available TPM budget across both concurrent calls, reserving
+    # each call's configured completion allowance before fitting prompt text.
+    prompt_budget = max(1, (request.tpm_limit - 2 * MAX_COMPLETION_TOKENS) // 2)
+    if estimate_prompt_tokens(request.query, "") > prompt_budget:
+        raise HTTPException(
+            status_code=422,
+            detail="The query and fixed prompt exceed the paired TPM budget; shorten the query or raise tpm_limit.",
+        )
+    documents, baseline_context_truncated = fit_context_to_prompt_budget(
+        request.query, documents, prompt_budget
+    )
+    if baseline_context_truncated:
+        logger.warning(
+            "Truncated baseline context to estimated prompt budget (%s tokens) for test case %r",
+            prompt_budget,
+            request.test_case,
+        )
+
     compression_start = time.perf_counter()
+    token_counter = None
+    if request.token_aware_budget:
+        token_counter = lambda text: max(
+            0,
+            estimate_prompt_tokens(request.query, text)
+            - estimate_prompt_tokens(request.query, ""),
+        )
     compressed = compressor.compress(
         query=request.query,
-        documents=request.documents,
+        documents=documents,
         threshold=request.threshold,
         top_k=request.top_k,
-        max_tokens=request.max_tokens,
+        max_tokens=min(
+            request.max_tokens or compressor.config.max_context_tokens,
+            max(1, prompt_budget - estimate_prompt_tokens(request.query, "")),
+        ),
         enable_coref=request.enable_coref,
         enable_multihop=request.enable_multihop,
         adaptive_gating=request.adaptive_gating,
+        token_counter=token_counter,
     )
     compression_latency_ms = (time.perf_counter() - compression_start) * 1000.0
-    original_context = "\n\n".join(request.documents)
+    original_context = "\n\n".join(documents)
+    baseline_preflight_tokens = estimate_prompt_tokens(request.query, original_context)
+    compressed_preflight_tokens = estimate_prompt_tokens(request.query, compressed.compressed_text)
+    if baseline_preflight_tokens > prompt_budget or compressed_preflight_tokens > prompt_budget:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "The paired contexts exceed the estimated TPM allowance after compression. "
+                "Reduce the requested context budget or raise tpm_limit."
+            ),
+        )
 
     generation_results = await asyncio.gather(
         generate_answer(request.query, original_context),
@@ -414,7 +699,7 @@ async def compare(request: CompareRequest) -> CompareResponse:
         "Test Case": request.test_case or "",
         "Query": request.query,
         "Model": get_groq_model(),
-        "Retrieved Passages": len(request.documents),
+        "Retrieved Passages": len(documents),
         "Sentences Retained": len(compressed.selected_sentences),
         "Query Complexity Score": compressed.query_complexity_score,
         "Query Intent Type": compressed.query_intent_type,
@@ -458,15 +743,16 @@ async def compare(request: CompareRequest) -> CompareResponse:
             "Close reports/eval_met.xlsx if it is open and try the comparison again."
         )
 
+    sentence_audit = [SentenceAuditResponse(**asdict(item)) for item in compressed.sentence_audit]
+    if ranked_chunks:
+        _audit_provenance(sentence_audit, ranked_chunks)
     return CompareResponse(
         model=get_groq_model(),
         test_case=request.test_case,
         compressed_text=compressed.compressed_text,
         selected_sentences=compressed.selected_sentences,
         scores=compressed.scores,
-        sentence_audit=[
-            SentenceAuditResponse(**asdict(item)) for item in compressed.sentence_audit
-        ],
+        sentence_audit=sentence_audit,
         estimated_original_word_count=compressed.estimated_original_word_count,
         estimated_compressed_word_count=compressed.estimated_compressed_word_count,
         estimated_word_reduction_percent=compressed.estimated_word_reduction_percent,
@@ -497,4 +783,9 @@ async def compare(request: CompareRequest) -> CompareResponse:
         with_compressor_answer_similarity=compressed_similarity,
         metrics_saved=metrics_saved,
         metrics_save_error=metrics_save_error,
+        retrieved_chunks=_retrieval_response(ranked_chunks),
+        preflight_prompt_token_budget=prompt_budget,
+        baseline_preflight_prompt_tokens=baseline_preflight_tokens,
+        compressed_preflight_prompt_tokens=compressed_preflight_tokens,
+        baseline_context_truncated=baseline_context_truncated,
     )

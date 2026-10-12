@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import time
 from collections import defaultdict
-from typing import Sequence
+from typing import Callable, Sequence
 
 from ..config import RuntimeConfig
 from ..coreference import CoreferenceLink, DiscoursePreserver
@@ -54,6 +54,7 @@ class ContextCompressor:
         enable_coref: bool = True,
         enable_multihop: bool = True,
         adaptive_gating: bool = True,
+        token_counter: Callable[[str], int] | None = None,
     ) -> CompressedDocument:
         """Compress text and return selection, complexity, and overhead metadata.
 
@@ -127,10 +128,12 @@ class ContextCompressor:
         original_text = " ".join(passages)
         estimated_original_word_count = estimate_word_count(original_text)
         if adaptive_gating and estimated_original_word_count:
-            adaptive_word_budget = max(
-                1,
-                round(estimated_original_word_count * gate.token_ratio_limit),
+            original_budget_units = (
+                token_counter(original_text)
+                if token_counter is not None
+                else estimated_original_word_count
             )
+            adaptive_word_budget = max(1, round(original_budget_units * gate.token_ratio_limit))
             max_context_words = min(max_context_words, adaptive_word_budget)
 
         threshold_candidates = [
@@ -178,6 +181,7 @@ class ContextCompressor:
             candidates=candidates,
             links=dependency_links,
             max_context_words=max_context_words,
+            token_counter=token_counter,
         )
         selected = [item for item in candidates if item.index in retained_indices]
         combined = " ".join(item.sentence for item in selected)
@@ -331,6 +335,7 @@ class ContextCompressor:
         candidates: Sequence[SentenceItem],
         links: Sequence[CoreferenceLink],
         max_context_words: int,
+        token_counter: Callable[[str], int] | None = None,
     ) -> set[int]:
         """Prune whole discourse-linked groups, never splitting an antecedent pair."""
         if not retained_indices:
@@ -365,9 +370,11 @@ class ContextCompressor:
         retained: set[int] = set()
         used_words = 0
         for group in ranked_groups:
-            group_words = sum(
-                estimate_word_count(candidate_by_index[index].sentence)
-                for index in group
+            group_text = " ".join(candidate_by_index[index].sentence for index in group)
+            group_words = (
+                token_counter(group_text)
+                if token_counter is not None
+                else sum(estimate_word_count(candidate_by_index[index].sentence) for index in group)
             )
             if used_words + group_words <= max_context_words or not retained:
                 retained.update(group)
