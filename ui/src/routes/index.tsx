@@ -4,19 +4,19 @@ import {
   ArrowDown,
   ArrowRight,
   ArrowUpRight,
+  Boxes,
   CheckCheck,
   ChevronRight,
   Database,
+  FileText,
   Github,
   Layers3,
-  Link2,
   MessageSquare,
   Moon,
   Network,
+  Search,
   Scissors,
   ShieldCheck,
-  SlidersHorizontal,
-  Sparkles,
   Sun,
   Workflow,
   X,
@@ -42,18 +42,20 @@ export const Route = createFileRoute("/")({
 });
 
 const pipelineSteps = [
-  { icon: MessageSquare, title: "User query", subtitle: "Your question", detail: "A natural-language query defines what evidence should be retained." },
-  { icon: Database, title: "Vector passages", subtitle: "Retrieved context", detail: "Paste passages or upload PDF/TXT content. Retrieval remains your own system." },
-  { icon: Workflow, title: "Limas engine", subtitle: "Subcortical compression", detail: "Sentence relevance, pairwise gain, discourse preservation, and adaptive gating select context." },
-  { icon: Sparkles, title: "Grounded Groq LLM", subtitle: "Provider generation", detail: "The same query is paired with full and compressed context for concurrent generation." },
-  { icon: CheckCheck, title: "Final answer", subtitle: "Grounded response", detail: "Compare answers and provider token usage side by side." },
+  { icon: MessageSquare, title: "User query", subtitle: "Question", detail: "A natural-language query defines the evidence to retrieve and retain." },
+  { icon: FileText, title: "Document", subtitle: "PDF/TXT or passages", detail: "Upload PDF/TXT for page-aware indexing, or keep using the compatible raw-passage workflow." },
+  { icon: Database, title: "MiniLM", subtitle: "Dense retrieval", detail: "all-MiniLM-L6-v2 embeds document chunks and the query for first-stage retrieval." },
+  { icon: Search, title: "Cross-encoder", subtitle: "Reranking", detail: "The MS MARCO cross-encoder batches query/chunk pairs and reranks retrieved candidates." },
+  { icon: Workflow, title: "Limas", subtitle: "Context compression", detail: "Sentence relevance, pairwise gain, discourse preservation, and adaptive gating select context." },
+  { icon: CheckCheck, title: "Groq compare", subtitle: "Answer + metrics", detail: "Baseline and compressed contexts are compared; provider usage and workbook metrics are recorded." },
 ];
 
 const architectureModules = [
-  { icon: Link2, name: "DiscoursePreserver", file: "coreference.py", description: "Prevents orphaned pronouns by binding dependent sentences to antecedents as atomic blocks.", tag: "COREFERENCE INTEGRITY" },
-  { icon: Network, name: "CrossEncoderRelevanceScorer", file: "scorer.py · models/cross_encoder.py", description: "Calculates batched query-to-sentence scores with contiguous pairwise joint gain.", tag: "PAIRWISE RELEVANCE" },
-  { icon: SlidersHorizontal, name: "QueryComplexityGater", file: "gating.py", description: "Dynamically scales relevance thresholds and word budgets based on query intent signals.", tag: "ADAPTIVE THRESHOLDING" },
-  { icon: Zap, name: "Groq & Metric Logger", file: "groq_client.py · comparison_metrics.py", description: "Uses provider prompt-token usage and logs paired evaluations to the workbook.", tag: "PAIRED EVALUATION" },
+  { icon: FileText, name: "PDF Ingestion & Chunking", file: "ingestion/pdf_extractor.py · chunker.py", description: "Extracts page-aware text and builds overlapping chunks while preserving source page ranges.", tag: "PAGE PROVENANCE" },
+  { icon: Database, name: "MiniLM VectorStore", file: "retrieval/vector_store.py", description: "Creates normalized dense vectors for document chunks and queries, then retrieves candidates.", tag: "DENSE RETRIEVAL" },
+  { icon: Network, name: "CrossEncoderReranker", file: "retrieval/reranker.py · models/cross_encoder.py", description: "Batches query/chunk pairs and reranks the dense candidates with the MS MARCO model.", tag: "BATCHED RERANKING" },
+  { icon: Boxes, name: "Limas ContextCompressor", file: "compression/compressor.py · coreference.py · gating.py", description: "Combines relevance, pairwise gain, discourse links, and adaptive context budgets.", tag: "CONTEXT COMPRESSION" },
+  { icon: Zap, name: "Groq & Metric Logger", file: "service/groq_client.py · evaluation/comparison_metrics.py", description: "Compares full and compressed contexts and saves provider usage and paired metrics.", tag: "PAIRED EVALUATION" },
 ];
 
 function LimasHome() {
@@ -139,7 +141,7 @@ function LimasHome() {
 
   const serviceLabel = config
     ? config.groq_configured
-      ? `API Online · Groq ${config.model}`
+      ? `API Online · Groq key configured`
       : "API Online · Groq key needed"
     : "API status unavailable";
 
@@ -179,14 +181,14 @@ function LimasHome() {
               <div className="hero-proofs"><span><Scissors size={13} />Fewer irrelevant tokens</span><span><Zap size={13} />Provider-measured usage</span><span><ShieldCheck size={13} />Source facts stay intact</span></div>
             </div>
             <div className="pipeline-panel scroll-reveal">
-              <div className="pipeline-heading"><div><span className="section-eyebrow"><i className="eyebrow-line" />FROM RETRIEVAL TO RELEVANCE</span><strong>Context-to-answer pipeline</strong><small>Grounded generation with semantic pruning</small></div><span className="pipeline-live"><span className="status-dot" />LIVE API</span></div>
+              <div className="pipeline-heading"><div><span className="section-eyebrow"><i className="eyebrow-line" />FROM DOCUMENT TO ANSWER</span><strong>Retrieval-to-compression pipeline</strong><small>Page-aware indexing, semantic retrieval, reranking, and grounded generation</small></div><span className="pipeline-live"><span className="status-dot" />LIVE API</span></div>
               <div className="pipeline-nodes">
                 {pipelineSteps.map((step, index) => {
                   const Icon = step.icon;
                   return (
                     <div className="pipeline-step" key={step.title}>
-                      <button type="button" className={`pipeline-node ${index === 2 ? "engine-node" : ""} ${selectedStep === index ? "pipeline-selected" : ""}`} onClick={() => setSelectedStep(selectedStep === index ? null : index)} aria-pressed={selectedStep === index}>
-                        <span className="pipeline-icon"><Icon size={21} /></span><strong>{step.title}</strong><small>{step.subtitle}</small>{index === 2 && <span className="engine-label">LIMAS ENGINE</span>}
+                      <button type="button" className={`pipeline-node ${index === 4 ? "engine-node" : ""} ${selectedStep === index ? "pipeline-selected" : ""}`} onClick={() => setSelectedStep(selectedStep === index ? null : index)} aria-pressed={selectedStep === index}>
+                        <span className="pipeline-icon"><Icon size={21} /></span><strong>{step.title}</strong><small>{step.subtitle}</small>{index === 4 && <span className="engine-label">LIMAS ENGINE</span>}
                       </button>
                       {index < pipelineSteps.length - 1 && <ChevronRight className="pipeline-chevron" size={15} />}
                     </div>
@@ -194,7 +196,7 @@ function LimasHome() {
                 })}
               </div>
               {selectedStep !== null && <div className="pipeline-detail">{pipelineSteps[selectedStep].detail}</div>}
-              <div className="pipeline-footer"><span><span className="status-dot" />Compression and paired-generation pipeline</span><code>POST /compress <ArrowRight size={10} /> POST /compare</code></div>
+              <div className="pipeline-footer"><span><span className="status-dot" />Legacy passage routes remain supported</span><code>/upload_pdf <ArrowRight size={10} /> /index <ArrowRight size={10} /> /retrieve</code></div>
             </div>
           </section>
 
@@ -204,7 +206,7 @@ function LimasHome() {
             {analyticsError && <p className="analytics-error" role="status">Could not load workbook analytics: {analyticsError}</p>}
             <section id="architecture" className="page-section architecture-section scroll-reveal">
               <div className="section-heading">
-                <div><div className="section-eyebrow"><span className="eyebrow-line" />UNDER THE HOOD</div><h2>Four modules. One intelligent layer.</h2><p>A composable architecture that makes every sentence earn its place.</p></div>
+                <div><div className="section-eyebrow"><span className="eyebrow-line" />UNDER THE HOOD</div><h2>Five stages. One retrieval-aware layer.</h2><p>Follow source pages through dense retrieval, reranking, compression, and paired evaluation.</p></div>
                 <span className="section-badge"><Workflow size={13} />Built for RAG pipelines</span>
               </div>
               <div className="module-grid">
@@ -219,7 +221,18 @@ function LimasHome() {
                   );
                 })}
               </div>
-              <div className="api-routes"><span>LIMAS API</span><code>POST /compare</code><code>POST /compress</code><code>POST /upload_pdf</code><code>GET /analytics</code><code>GET /config</code></div>
+              <div className="runtime-panel scroll-reveal" aria-label="Runtime component status">
+                <div className="runtime-panel-heading"><strong>Runtime status</strong><span>Live configuration from the API</span></div>
+                <div className="runtime-status-grid">
+                  <RuntimeStatus label="FastAPI service" state={config ? "online" : "offline"} detail={config ? "Reachable" : "Unavailable"} />
+                  <RuntimeStatus label="PyTorch + Transformers" state={config?.transformers_available ? "online" : config ? "offline" : "unknown"} detail={config?.transformers_available ? "Runtime ready" : config ? "Not available" : "Waiting for API"} />
+                  <RuntimeStatus label="MiniLM encoder" state={config?.embedding_model_loaded ? "online" : config ? "offline" : "unknown"} detail={config?.embedding_model ?? "Waiting for API"} />
+                  <RuntimeStatus label="MS MARCO reranker" state={config?.reranker_model_loaded ? "online" : config ? "offline" : "unknown"} detail={config?.reranker_model ?? "Waiting for API"} />
+                  <RuntimeStatus label="Compression scorer" state={config?.compression_scorer_loaded ? "online" : config ? "offline" : "unknown"} detail={config?.compression_scorer_model ?? "Waiting for API"} />
+                  <RuntimeStatus label="Groq API key" state={config?.groq_configured ? "online" : config ? "offline" : "unknown"} detail={config?.groq_configured ? "Configured · provider not pinged" : config ? "Not configured" : "Waiting for API"} />
+                </div>
+              </div>
+              <div className="api-routes"><span>LIMAS API</span><code>POST /upload_pdf</code><code>POST /index</code><code>POST /retrieve</code><code>POST /compress</code><code>POST /compare</code><code>GET /analytics</code><code>GET /config</code></div>
             </section>
           </div>
         </main>
@@ -227,7 +240,7 @@ function LimasHome() {
         <footer className="site-footer">
           <div className="footer-top">
             <a className="footer-brand" href="#overview" onClick={(event) => { event.preventDefault(); navigateTo("overview"); }}><span className="brand-symbol"><Layers3 size={18} /></span><span><strong>Limas v2.0</strong><small>Subcortical Context Compression Middleware</small></span></a>
-            <div className="footer-routes"><code>POST /compress</code><code>POST /compare</code><code>GET /analytics</code><code>GET /config</code></div>
+            <div className="footer-routes"><code>POST /index</code><code>POST /retrieve</code><code>POST /compress</code><code>POST /compare</code><code>GET /analytics</code></div>
             <span className="footer-api-status"><span className="status-dot" />{serviceLabel}</span>
           </div>
           <div className="footer-bottom"><span>© 2026 Limas · Subcortical Context Compression Middleware for RAG Pipelines.</span><span>Precision in context. Clarity in answers.</span></div>
@@ -244,5 +257,15 @@ function LimasHome() {
         </Dialog.Root>
       </div>
     </Tooltip.Provider>
+  );
+}
+
+function RuntimeStatus({ label, state, detail }: { label: string; state: "online" | "offline" | "unknown"; detail: string }) {
+  return (
+    <div className={`runtime-status runtime-${state}`}>
+      <span className="runtime-status-label"><i className="runtime-dot" />{label}</span>
+      <span className="runtime-status-detail">{detail}</span>
+      <span className="sr-only">{state}</span>
+    </div>
   );
 }

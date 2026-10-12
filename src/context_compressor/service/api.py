@@ -26,6 +26,7 @@ from ..ingestion.pdf_extractor import PageMetadata, PdfIngestionError, extract_p
 from ..retrieval.reranker import CrossEncoderReranker, MS_MARCO_MODEL
 from ..retrieval.vector_store import RetrievedChunk, VectorStore
 from ..evaluation.benchmark import _jaccard_similarity
+from ..models.cross_encoder import AutoModelForSequenceClassification, AutoTokenizer, torch
 from ..evaluation.comparison_metrics import (
     DEFAULT_WORKBOOK,
     WORKSHEET_NAME,
@@ -311,9 +312,18 @@ async def health() -> dict[str, str]:
 
 @app.get("/config")
 async def runtime_config() -> dict[str, str | bool]:
+    reranker = rerankers.get(MS_MARCO_MODEL)
+    embedding_ready = vector_store._model is not None and vector_store._model is not False
     return {
         "groq_configured": bool(os.getenv("GROQ_API_KEY")),
         "model": get_groq_model(),
+        "transformers_available": torch is not None and AutoTokenizer is not None and AutoModelForSequenceClassification is not None,
+        "embedding_model_loaded": embedding_ready,
+        "embedding_model": vector_store.model_name,
+        "reranker_model_loaded": bool(reranker and not reranker.scorer.fallback_mode),
+        "reranker_model": MS_MARCO_MODEL,
+        "compression_scorer_loaded": not compressor.scorer.fallback_mode,
+        "compression_scorer_model": compressor.scorer.model_name,
     }
 
 

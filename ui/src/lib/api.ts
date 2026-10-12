@@ -84,6 +84,13 @@ export interface AnalyticsResult {
 export interface RuntimeConfig {
   groq_configured: boolean;
   model: string;
+  transformers_available: boolean;
+  embedding_model_loaded: boolean;
+  embedding_model: string;
+  reranker_model_loaded: boolean;
+  reranker_model: string;
+  compression_scorer_loaded: boolean;
+  compression_scorer_model: string;
 }
 
 export interface UploadResult {
