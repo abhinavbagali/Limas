@@ -105,6 +105,7 @@ export interface UploadResult {
 export interface IndexResult {
   doc_id: string; page_count: number; chunk_count: number; embedding_backend: string;
   embedding_model: string | null;
+  retrieval_method: string;
 }
 
 export interface CompressionOptions {

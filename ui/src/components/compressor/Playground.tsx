@@ -230,7 +230,7 @@ export function Playground({ model, groqConfigured, onRunComplete }: PlaygroundP
       setScenario("custom");
       setResult(null);
       setNotice(
-        `Loaded ${uploaded.filename} (${uploaded.page_count} pages); indexed ${indexed.chunk_count} chunks using ${indexed.embedding_backend}.`,
+        `Loaded ${uploaded.filename} (${uploaded.page_count} pages); indexed ${indexed.chunk_count} chunks using ${indexed.embedding_backend} with ${indexed.retrieval_method}.`,
       );
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Document upload failed.");

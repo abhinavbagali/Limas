@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from .retrieval.lexical import is_technical_lookup
+
 
 _COMPARATIVE_TERMS = re.compile(
     r"\b(compare|comparison|versus|vs\.?|difference|similarities|similarity|"
@@ -50,10 +52,11 @@ class QueryComplexityGater:
     context ratio so that multi-step questions retain denser evidence.
     """
 
-    MIN_THRESHOLD = 0.30
-    MAX_THRESHOLD = 0.75
-    MIN_TOKEN_RATIO = 0.20
-    MAX_TOKEN_RATIO = 0.80
+    BASE_THRESHOLD = 0.10
+    MAX_ALLOWED_THRESHOLD = 0.20
+    MIN_TOKEN_RATIO = 0.75
+    MAX_TOKEN_RATIO = 0.85
+    DEFAULT_TOKEN_RATIO_LIMIT = 0.80
 
     def analyze(self, query: str) -> QueryGateDecision:
         """Analyze intent, named-entity-like spans, and reasoning structure."""
@@ -61,6 +64,7 @@ class QueryComplexityGater:
         comparative = bool(_COMPARATIVE_TERMS.search(text))
         multi_hop_matches = list(_MULTI_HOP_TERMS.finditer(text))
         reasoning_question = bool(_REASONING_QUESTION.search(text))
+        technical_lookup = is_technical_lookup(text)
         entity_count = self._count_entities(text)
         word_count = len(re.findall(r"\b[\w'-]+\b", text))
 
@@ -81,6 +85,9 @@ class QueryComplexityGater:
         if word_count >= 14:
             score += 0.10
             signals.append("long_query")
+        if technical_lookup:
+            score += 0.28
+            signals.append("technical_exact_lookup")
 
         complexity = min(1.0, max(0.0, score))
         if comparative:
@@ -90,17 +97,16 @@ class QueryComplexityGater:
         else:
             intent = "factual"
 
-        threshold = self.MAX_THRESHOLD - (
-            (self.MAX_THRESHOLD - self.MIN_THRESHOLD) * complexity
-        )
-        token_ratio = self.MIN_TOKEN_RATIO + (
-            (self.MAX_TOKEN_RATIO - self.MIN_TOKEN_RATIO) * complexity
-        )
+        threshold = self.BASE_THRESHOLD + (complexity * 0.10)
+        token_ratio = self.DEFAULT_TOKEN_RATIO_LIMIT + (complexity * 0.05)
         return QueryGateDecision(
             complexity_score=complexity,
             intent_type=intent,
             entity_count=entity_count,
-            dynamic_threshold=min(self.MAX_THRESHOLD, max(self.MIN_THRESHOLD, threshold)),
+            dynamic_threshold=min(
+                self.MAX_ALLOWED_THRESHOLD,
+                max(self.BASE_THRESHOLD, threshold),
+            ),
             token_ratio_limit=min(self.MAX_TOKEN_RATIO, max(self.MIN_TOKEN_RATIO, token_ratio)),
             complexity_signals=tuple(signals),
         )

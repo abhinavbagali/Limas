@@ -13,11 +13,14 @@ export function ParticleField() {
     let height = 0;
     let pointerX = -1000;
     let pointerY = -1000;
+    let pointerInfluence = 0;
     const particles = Array.from({ length: 76 }, (_, index) => ({
       x: ((index * 173.7) % 997) / 997,
       y: ((index * 89.3) % 991) / 991,
       phase: index * 0.7,
       speed: 0.12 + (index % 5) * 0.025,
+      vx: 0,
+      vy: 0,
     }));
 
     const resize = () => {
@@ -41,7 +44,7 @@ export function ParticleField() {
         const dy = pointerY - y;
         const distance = Math.hypot(dx, dy);
         if (!reducedMotion && distance < 145 && distance > 0) {
-          const influence = (1 - distance / 145) * 18;
+          const influence = (1 - distance / 145) * 18 * pointerInfluence;
           x -= (dx / distance) * influence;
           y -= (dy / distance) * influence;
         }
@@ -51,7 +54,7 @@ export function ParticleField() {
         context.fill();
         return { x, y };
       });
-      context.globalAlpha = 0.22;
+      context.globalAlpha = 0.30;
       context.strokeStyle = particleColor;
       for (let index = 0; index < points.length; index += 1) {
         const next = points[(index + 1) % points.length];
@@ -68,31 +71,43 @@ export function ParticleField() {
       particles.forEach((particle) => {
         particle.phase += particle.speed * 0.008;
         if (!reducedMotion) {
-          particle.x += Math.cos(particle.phase) * 0.000035;
-          particle.y += Math.sin(particle.phase * 0.83) * 0.000025;
+          const dx = particle.x * width - pointerX;
+          const dy = particle.y * height - pointerY;
+          const distance = Math.hypot(dx, dy);
+          if (distance > 0 && distance < 145 && pointerInfluence > 0.01) {
+            const force = (1 - distance / 145) * pointerInfluence;
+            particle.vx += (dx / distance) * force * (2 / Math.max(width, 1));
+            particle.vy += (dy / distance) * force * (2 / Math.max(height, 1));
+          }
+          particle.x += Math.cos(particle.phase) * 0.00012 + particle.vx;
+          particle.y += Math.sin(particle.phase * 0.83) * 0.00009 + particle.vy;
+          particle.vx *= 0.92;
+          particle.vy *= 0.92;
           if (particle.x < 0) particle.x = 1;
           if (particle.x > 1) particle.x = 0;
           if (particle.y < 0) particle.y = 1;
           if (particle.y > 1) particle.y = 0;
         }
       });
+      pointerInfluence *= 0.94;
       draw();
       if (!reducedMotion) animationFrame = requestAnimationFrame(animate);
     };
-    const trackPointer = (event: PointerEvent) => {
+    const trackMouse = (event: MouseEvent) => {
       const bounds = canvas.getBoundingClientRect();
       pointerX = event.clientX - bounds.left;
       pointerY = event.clientY - bounds.top;
+      pointerInfluence = 1;
       if (reducedMotion) draw();
     };
     resize();
     window.addEventListener("resize", resize);
-    window.addEventListener("pointermove", trackPointer, { passive: true });
+    window.addEventListener("mousemove", trackMouse, { passive: true });
     if (!reducedMotion) animationFrame = requestAnimationFrame(animate);
     return () => {
       cancelAnimationFrame(animationFrame);
       window.removeEventListener("resize", resize);
-      window.removeEventListener("pointermove", trackPointer);
+      window.removeEventListener("mousemove", trackMouse);
     };
   }, []);
 

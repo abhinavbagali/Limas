@@ -5,6 +5,7 @@ from typing import Sequence
 
 from ..ingestion.chunker import TextChunk
 from ..models.cross_encoder import CrossEncoderRelevanceScorer
+from .lexical import is_technical_lookup, technical_match_count, technical_query_terms
 from .vector_store import RetrievedChunk
 
 MS_MARCO_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
@@ -31,5 +32,18 @@ class CrossEncoderReranker:
         if top_k < 1:
             raise ValueError("top_k must be positive.")
         scores = self.scorer.score_pairs(query, [item.chunk.text for item in candidates])
-        ranked = sorted(zip(candidates, scores), key=lambda item: (-item[1], item[0].rank))[:top_k]
+        exact_terms = technical_query_terms(query)
+        technical_query = is_technical_lookup(query)
+        denominator = max(1, len(exact_terms))
+        ranked = sorted(
+            zip(candidates, scores),
+            key=lambda pair: (
+                -(
+                    float(pair[1])
+                    + (0.20 * technical_match_count(query, pair[0].chunk.text) / denominator
+                       if technical_query else 0.0)
+                ),
+                pair[0].rank,
+            ),
+        )[:top_k]
         return [RerankedChunk(item.chunk, item.score, float(score), item.rank, rank) for rank, (item, score) in enumerate(ranked, 1)]

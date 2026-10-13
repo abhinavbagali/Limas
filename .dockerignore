@@ -1,0 +1,27 @@
+# Git and local Python environments
+.git/
+.venv/
+.venv*/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node dependencies/build output are recreated in the frontend build stage
+**/node_modules/
+ui/dist/
+**/dist/
+
+# Local secrets and environment files
+.env
+.env.*
+!.env.example
+
+# Local editor/OS files and temporary test output
+.vscode/
+.idea/
+.DS_Store
+.tmp-test/

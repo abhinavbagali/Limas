@@ -129,9 +129,9 @@ class ContextCompressorPipelineTests(unittest.TestCase):
         self.assertTrue(retained.retained)
         self.assertIsNotNone(retained.atomic_group_id)
         self.assertIn("threshold", retained.retention_reason)
-        self.assertFalse(discarded.retained)
-        self.assertIsNone(discarded.atomic_group_id)
-        self.assertIn("Below threshold", discarded.discard_reason)
+        self.assertTrue(discarded.retained)
+        self.assertIsNotNone(discarded.atomic_group_id)
+        self.assertIn("minimum-retention fallback", discarded.retention_reason)
 
     def test_sentence_audit_assigns_one_group_to_preserved_antecedent(self):
         result = ContextCompressor(
@@ -192,11 +192,11 @@ class ContextCompressorPipelineTests(unittest.TestCase):
         )
 
         self.assertGreater(complex_query.complexity_score, factual.complexity_score)
-        self.assertLess(complex_query.dynamic_threshold, factual.dynamic_threshold)
+        self.assertGreater(complex_query.dynamic_threshold, factual.dynamic_threshold)
         self.assertGreater(complex_query.token_ratio_limit, factual.token_ratio_limit)
         self.assertEqual(complex_query.intent_type, "comparative")
-        self.assertTrue(0.30 <= complex_query.dynamic_threshold <= 0.75)
-        self.assertTrue(0.20 <= complex_query.token_ratio_limit <= 0.80)
+        self.assertTrue(0.10 <= complex_query.dynamic_threshold <= 0.20)
+        self.assertTrue(0.75 <= complex_query.token_ratio_limit <= 0.85)
 
     def test_discourse_analyzer_links_pronouns_and_connectives_within_passage(self):
         analyzer = DiscoursePreserver(use_spacy=False)
@@ -293,8 +293,8 @@ class ContextCompressorPipelineTests(unittest.TestCase):
         self.assertIn("Acme released earnings.", result.compressed_text)
         self.assertIn("It grew by 15%", result.compressed_text)
         self.assertTrue(0.0 <= result.query_complexity_score <= 1.0)
-        self.assertTrue(0.30 <= result.dynamic_threshold_used <= 0.75)
-        self.assertTrue(0.20 <= result.dynamic_token_ratio_limit <= 0.80)
+        self.assertEqual(result.dynamic_threshold_used, 0.30)
+        self.assertTrue(0.75 <= result.dynamic_token_ratio_limit <= 0.85)
         self.assertGreater(result.pairwise_scoring_latency_ms, 0.0)
 
     def test_benchmark_query_set_groups_latency_and_quality_proxies(self):
@@ -336,19 +336,24 @@ class ContextCompressorPipelineTests(unittest.TestCase):
 
         ui_response = client.get("/")
         self.assertEqual(ui_response.status_code, 200)
-        self.assertIn("Baseline RAG · Without compressor", ui_response.text)
-        self.assertIn("Compressed RAG · With compressor", ui_response.text)
-        self.assertIn('fetch("/compare"', ui_response.text)
-        self.assertIn("GROQ_API_KEY", ui_response.text)
-        self.assertIn("theme-toggle", ui_response.text)
-        self.assertIn("<title>Limas — Subcortical Context Compressor</title>", ui_response.text)
-        self.assertIn("Subcortical Context Compression", ui_response.text)
-        self.assertIn('id="upload-dropzone"', ui_response.text)
-        self.assertIn('fetch("/analytics")', ui_response.text)
-        self.assertIn('id="test-case"', ui_response.text)
-        self.assertIn('id="heatmap"', ui_response.text)
-        self.assertIn("enable-coref", ui_response.text)
-        self.assertIn("adaptive-gating", ui_response.text)
+        if (ROOT / "ui" / "dist" / "client" / "index.html").is_file():
+            self.assertIn("Limas — Subcortical Context Compression Middleware", ui_response.text)
+            self.assertIn("EXPERIMENT WORKSPACE", ui_response.text)
+            self.assertIn('/assets/styles-', ui_response.text)
+        else:
+            self.assertIn("Baseline RAG · Without compressor", ui_response.text)
+            self.assertIn("Compressed RAG · With compressor", ui_response.text)
+            self.assertIn('fetch("/compare"', ui_response.text)
+            self.assertIn("GROQ_API_KEY", ui_response.text)
+            self.assertIn("theme-toggle", ui_response.text)
+            self.assertIn("<title>Limas — Subcortical Context Compressor</title>", ui_response.text)
+            self.assertIn("Subcortical Context Compression", ui_response.text)
+            self.assertIn('id="upload-dropzone"', ui_response.text)
+            self.assertIn('fetch("/analytics")', ui_response.text)
+            self.assertIn('id="test-case"', ui_response.text)
+            self.assertIn('id="heatmap"', ui_response.text)
+            self.assertIn("enable-coref", ui_response.text)
+            self.assertIn("adaptive-gating", ui_response.text)
 
         health_response = client.get("/health")
         self.assertEqual(health_response.status_code, 200)
@@ -356,10 +361,8 @@ class ContextCompressorPipelineTests(unittest.TestCase):
         with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}):
             config_response = client.get("/config")
         self.assertEqual(config_response.status_code, 200)
-        self.assertEqual(
-            config_response.json(),
-            {"groq_configured": True, "model": "openai/gpt-oss-120b"},
-        )
+        self.assertTrue(config_response.json()["groq_configured"])
+        self.assertEqual(config_response.json()["model"], "openai/gpt-oss-120b")
         self.assertNotIn("test-key", config_response.text)
         self.assertEqual(client.get("/health").json()["service"], "limas")
 
@@ -390,7 +393,7 @@ class ContextCompressorPipelineTests(unittest.TestCase):
             {0, 1, 2},
         )
         self.assertEqual(body["dynamic_threshold_used"], 0.2)
-        self.assertTrue(0.20 <= body["dynamic_token_ratio_limit"] <= 0.80)
+        self.assertTrue(0.75 <= body["dynamic_token_ratio_limit"] <= 0.85)
 
         disabled_response = client.post(
             "/compress",

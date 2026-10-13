@@ -1010,3 +1010,84 @@ The repository does not contain representative 4–10 page, 20–30 page, and 50
 - `git diff --check` passed.
 - Frontend TypeScript check and production build passed earlier in this implementation sequence; existing bundle-size and unused-import warnings remain.
 - The project is a working local prototype. It has not completed the corpus-based multi-length retrieval evaluation and should not be presented as having validated long-document QA quality or factual equivalence.
+
+## 17. Quality-First Retention Update (2026-10-13)
+
+This update records the current soft-pruning behavior implemented after the
+retrieval and long-PDF work above. Earlier sections are preserved as historical
+implementation notes; use this section for the current gating and retention
+defaults.
+
+### Adaptive gating defaults
+
+`QueryComplexityGater` now derives its settings from the normalized query
+complexity score `C`, clamped to `[0, 1]`:
+
+```text
+threshold τ(Q) = clamp(0.15 - 0.10 × C, 0.05, 0.15)
+context ratio B(Q) = clamp(0.60 + 0.35 × C, 0.60, 0.95)
+```
+
+Thus simpler queries start with a 0.15 relevance cutoff and 60% context ratio;
+the cutoff falls to 0.05 and the context ratio grows toward 95% as complexity
+increases. The values are heuristic gating parameters, not calibrated model
+probabilities. An explicit `threshold` in a `/compress` or `/compare` request
+overrides the adaptive cutoff. With adaptive gating disabled and no explicit
+threshold, `RuntimeConfig.threshold` defaults to 0.10.
+
+### Minimum evidence and neighboring context
+
+- If fewer candidates pass the cutoff than the retention floor, fallback
+  selection keeps the highest-scoring `max(8, floor(0.70 × candidate_count))`
+  sentences, capped at the number of available candidates. The floor can exceed
+  the configured top-k selection count.
+- The compressor adds each selected sentence's immediate predecessor and
+  successor before final word-budget packing. Neighbor expansion stays within
+  the same input passage, so the last sentence of one retrieved chunk is not
+  joined to the first sentence of another.
+- Fallback evidence and added neighbors are prioritized/protected during local
+  word-budget packing. As a result, selected evidence can exceed the nominal
+  `max_tokens` word-proxy cap when preserving it is necessary; the downstream
+  Groq prompt-fitting step remains responsible for fitting the provider prompt.
+- `RuntimeConfig.max_context_tokens` now defaults to 4,000. Request-level
+  `max_tokens` overrides remain supported and cap the local adaptive word
+  budget; the internal quantity is a word-count proxy, not exact tokenizer
+  tokens.
+
+Example soft-pruning request fields are `"adaptive_gating": true`,
+`"threshold": 0.05`, and `"max_tokens": 4000`. These are accepted by both
+`/compress` and `/compare`; a manually supplied threshold takes precedence over
+the adaptive threshold.
+
+### Verification status
+
+Python compilation passed, `git diff --check` passed, and four focused backend
+tests covering adaptive gating, minimum-retention fallback, dependency audit,
+and compression metadata passed after this update. A full-suite pass has not
+been established for this revision. The existing retrieval evaluation still
+needs representative short, medium, and 50+ page PDFs with labeled query cases
+before it can support long-document quality claims.
+
+## 18. Retention Defaults Restored (2026-10-13)
+
+This section supersedes the threshold, context-ratio, and fallback-floor values
+recorded in Section 17. Neighbor expansion remains enabled, and the 4,000-word
+proxy context budget remains the default.
+
+- Adaptive threshold: `τ(Q) = clamp(0.10 + 0.10 × C, 0.10, 0.20)`. More complex
+  queries receive a slightly higher score cutoff, up to 0.20.
+- Adaptive context ratio: `clamp(0.80 + 0.05 × C, 0.75, 0.85)`. The default
+  ratio is 0.80 and rises toward 0.85 with complexity.
+- Minimum-retention fallback: when fewer than
+  `min(candidate_count, max(5, floor(0.60 × candidate_count)))` sentences pass
+  the threshold, the compressor keeps the highest-scoring candidates to reach
+  that floor.
+- Adjacent predecessor/successor sentences are still added within each input
+  passage and protected during local word-budget packing.
+- Both `/compress` and `/compare` continue to accept manual `threshold` and
+  `max_tokens` overrides. `threshold: 0.10` and `max_tokens: 4000` are the
+  documented soft-pruning request values.
+
+The current backend revision was compiled and the focused gating and compressor
+tests passed after these defaults were restored. The full test suite has not
+been rerun for this restoration.

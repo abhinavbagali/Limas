@@ -9,6 +9,7 @@ from ..config import RuntimeConfig
 from ..coreference import CoreferenceLink, DiscoursePreserver
 from ..gating import QueryComplexityGater, QueryGateDecision
 from ..models.cross_encoder import CrossEncoderRelevanceScorer
+from ..retrieval.lexical import is_technical_lookup, technical_match_count
 from ..scorer import BatchedScorer, MultiHopInterdependenceScorer, SingleScorer
 from ..types import CompressedDocument, SentenceAudit, SentenceItem
 from .sentence_splitter import split_document_into_sentences
@@ -124,6 +125,12 @@ class ContextCompressor:
             else self.config.threshold
         )
         active_top_k = self.config.top_k if top_k is None else top_k
+        technical_lookup = is_technical_lookup(query)
+        protected_exact_indices = {
+            item.index
+            for item in candidates
+            if technical_lookup and technical_match_count(query, item.sentence) > 0
+        }
         max_context_words = self.config.max_context_tokens if max_tokens is None else max_tokens
         original_text = " ".join(passages)
         estimated_original_word_count = estimate_word_count(original_text)
@@ -139,18 +146,62 @@ class ContextCompressor:
         threshold_candidates = [
             item for item in candidates if item.score >= active_threshold
         ]
-        used_fallback = not threshold_candidates
-        eligible_selection = threshold_candidates
-        if used_fallback:
-            eligible_selection = sorted(
-                candidates,
-                key=lambda item: (-item.score, item.index),
-            )
-        initial_selection = sorted(eligible_selection, key=lambda item: item.index)[
-            :active_top_k
+        threshold_indices = {item.index for item in threshold_candidates}
+        minimum_retained = min(
+            len(candidates),
+            max(5, int(len(candidates) * 0.60)),
+        )
+        used_fallback = len(threshold_candidates) < minimum_retained
+        fallback_indices = (
+            {
+                item.index
+                for item in sorted(candidates, key=lambda item: (-item.score, item.index))[
+                    :minimum_retained
+                ]
+            }
+            if used_fallback
+            else set()
+        )
+        eligible_selection = [
+            item for item in candidates
+            if item.index in threshold_indices
+            or item.index in protected_exact_indices
+            or item.index in fallback_indices
         ]
-        initial_indices = {item.index for item in initial_selection}
         eligible_indices = {item.index for item in eligible_selection}
+        selection_limit = max(active_top_k, minimum_retained if used_fallback else 0)
+        mandatory_indices = protected_exact_indices | fallback_indices
+        protected_selection = sorted(
+            (item for item in eligible_selection if item.index in mandatory_indices),
+            key=lambda item: (
+                item.index not in fallback_indices,
+                -technical_match_count(query, item.sentence),
+                -item.score,
+                item.index,
+            ),
+        )[: max(selection_limit, min(5, len(protected_exact_indices)))]
+        protected_selected_indices = {item.index for item in protected_selection}
+        remaining_selection = sorted(
+            (item for item in eligible_selection if item.index not in protected_selected_indices),
+            key=lambda item: (-item.score, item.index),
+        )[: max(0, selection_limit - len(protected_selection))]
+        initial_selection = sorted(
+            protected_selection + remaining_selection,
+            key=lambda item: item.index,
+        )
+        initial_indices = {item.index for item in initial_selection}
+
+        # Keep local setup/explanation around selected evidence, without crossing
+        # boundaries between separately retrieved passages.
+        context_neighbor_indices: set[int] = set()
+        for index in initial_indices:
+            for neighbor in (index - 1, index + 1):
+                if (
+                    0 <= neighbor < len(candidates)
+                    and document_ids[neighbor] == document_ids[index]
+                ):
+                    context_neighbor_indices.add(neighbor)
+        context_neighbor_indices.difference_update(initial_indices)
 
         links: list[CoreferenceLink] = []
         coreference_latency_ms = 0.0
@@ -175,6 +226,7 @@ class ContextCompressor:
             if dependency_links
             else set(initial_indices)
         )
+        retained_indices.update(context_neighbor_indices)
         dependency_candidate_indices = set(retained_indices)
         retained_indices = self._apply_word_budget(
             retained_indices=retained_indices,
@@ -182,6 +234,7 @@ class ContextCompressor:
             links=dependency_links,
             max_context_words=max_context_words,
             token_counter=token_counter,
+            protected_indices=protected_selected_indices | context_neighbor_indices,
         )
         selected = [item for item in candidates if item.index in retained_indices]
         combined = " ".join(item.sentence for item in selected)
@@ -242,16 +295,45 @@ class ContextCompressor:
             retention_reason = None
             discard_reason = None
             if retained:
-                if sentence_index in initial_indices:
-                    if used_fallback:
+                if sentence_index in protected_exact_indices:
+                    retention_reason = (
+                        "Preserved as an exact technical identifier match for a parameter/value lookup."
+                    )
+                elif sentence_index in initial_indices:
+                    preserving_link = next(
+                        (
+                            link for link in dependency_links
+                            if sentence_index in {link.antecedent_index, link.dependent_index}
+                            and link.antecedent_index in retained_indices
+                            and link.dependent_index in retained_indices
+                        ),
+                        None,
+                    )
+                    if sentence_index in fallback_indices and preserving_link is not None:
+                        relation = preserving_link.reason.replace("_", " ")
+                        if preserving_link.antecedent_index == sentence_index:
+                            retention_reason = (
+                                f"Retained as antecedent for sentence "
+                                f"{preserving_link.dependent_index + 1} ({relation} dependency)."
+                            )
+                        else:
+                            retention_reason = (
+                                f"Retained to preserve {relation} dependency with antecedent "
+                                f"sentence {preserving_link.antecedent_index + 1}."
+                            )
+                    elif sentence_index in fallback_indices:
                         retention_reason = (
-                            "Selected as a top-ranked fallback because no sentence "
-                            "passed the threshold."
+                            "Selected by the minimum-retention fallback because fewer "
+                            "than the configured safe sentence floor passed the threshold."
                         )
                     else:
                         retention_reason = (
                             f"Passes threshold τ={active_threshold:.2f} and top-K selection."
                         )
+                elif sentence_index in context_neighbor_indices:
+                    retention_reason = (
+                        "Retained as an adjacent sentence to preserve local context."
+                    )
                 else:
                     preserving_link = next(
                         (
@@ -336,6 +418,7 @@ class ContextCompressor:
         links: Sequence[CoreferenceLink],
         max_context_words: int,
         token_counter: Callable[[str], int] | None = None,
+        protected_indices: set[int] | None = None,
     ) -> set[int]:
         """Prune whole discourse-linked groups, never splitting an antecedent pair."""
         if not retained_indices:
@@ -359,9 +442,11 @@ class ContextCompressor:
         groups: dict[int, list[int]] = defaultdict(list)
         for index in retained_indices:
             groups[find(index)].append(index)
+        protected_indices = protected_indices or set()
         ranked_groups = sorted(
             groups.values(),
             key=lambda indices: (
+                not bool(set(indices) & protected_indices),
                 -max(candidate_by_index[index].score for index in indices),
                 min(indices),
             ),
@@ -376,7 +461,8 @@ class ContextCompressor:
                 if token_counter is not None
                 else sum(estimate_word_count(candidate_by_index[index].sentence) for index in group)
             )
-            if used_words + group_words <= max_context_words or not retained:
+            is_protected_group = bool(set(group) & protected_indices)
+            if is_protected_group or used_words + group_words <= max_context_words or not retained:
                 retained.update(group)
                 used_words += group_words
         return retained

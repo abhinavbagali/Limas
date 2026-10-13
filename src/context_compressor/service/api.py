@@ -15,6 +15,7 @@ from uuid import uuid4
 from dotenv import load_dotenv
 from fastapi.responses import FileResponse
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.staticfiles import StaticFiles
 from openpyxl import load_workbook
 from pydantic import BaseModel, Field
 from pypdf import PdfReader
@@ -255,6 +256,13 @@ document_pages: dict[str, list[PageMetadata]] = {}
 document_chunks: dict[str, list[TextChunk]] = {}
 document_chunk_config: dict[str, tuple[int, int]] = {}
 UI_PATH = Path(__file__).parent / "static" / "index.html"
+UI_DIST_DIR = PROJECT_ROOT / "ui" / "dist"
+UI_CLIENT_DIR = UI_DIST_DIR / "client"
+UI_STATIC_DIR = (
+    UI_CLIENT_DIR
+    if (UI_CLIENT_DIR / "index.html").is_file()
+    else UI_DIST_DIR
+)
 
 
 def _get_reranker(model_name: str) -> CrossEncoderReranker:
@@ -302,7 +310,8 @@ def _retrieval_response(ranked_chunks: list[object]) -> list[RetrievalItemRespon
 
 @app.get("/", include_in_schema=False)
 async def pipeline_ui() -> FileResponse:
-    return FileResponse(UI_PATH)
+    react_index = UI_STATIC_DIR / "index.html"
+    return FileResponse(react_index if react_index.is_file() else UI_PATH)
 
 
 @app.get("/health")
@@ -439,6 +448,7 @@ def index_document(request: IndexRequest) -> dict[str, object]:
         "overlap_tokens": request.overlap_tokens,
         "embedding_backend": index.backend,
         "embedding_model": vector_store.model_name if index.backend == "sentence-transformers" else None,
+        "retrieval_method": "dense + BM25 with exact technical-term matching",
         "memory_profile": memory_profile,
     }
 
@@ -798,4 +808,15 @@ async def compare(request: CompareRequest) -> CompareResponse:
         baseline_preflight_prompt_tokens=baseline_preflight_tokens,
         compressed_preflight_prompt_tokens=compressed_preflight_tokens,
         baseline_context_truncated=baseline_context_truncated,
+    )
+
+
+# Keep this catch-all mount after the API routes so paths such as /compress,
+# /compare, /index, and /retrieve continue to resolve to their API handlers.
+# The root route above serves index.html; this mount serves its built assets.
+if UI_STATIC_DIR.is_dir() and (UI_STATIC_DIR / "index.html").is_file():
+    app.mount(
+        "/",
+        StaticFiles(directory=str(UI_STATIC_DIR), html=True),
+        name="ui_dist",
     )
