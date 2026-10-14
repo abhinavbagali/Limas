@@ -1,13 +1,17 @@
-import { useEffect, type RefObject } from "react";
+import { useEffect, type DependencyList, type RefObject } from "react";
 
-export function useScrollReveal(root: RefObject<HTMLElement | null>) {
+export function useScrollReveal(
+  root: RefObject<HTMLElement | null>,
+  deps: DependencyList = [],
+) {
   useEffect(() => {
-    const elements = root.current?.querySelectorAll<HTMLElement>(".scroll-reveal");
-    if (!elements?.length) return;
+    if (!root.current) return;
     if (!("IntersectionObserver" in window)) {
+      const elements = root.current.querySelectorAll<HTMLElement>(".scroll-reveal");
       elements.forEach((element) => element.classList.add("is-revealed"));
       return;
     }
+
     const observer = new IntersectionObserver(
       (entries) =>
         entries.forEach((entry) => {
@@ -16,9 +20,35 @@ export function useScrollReveal(root: RefObject<HTMLElement | null>) {
             observer.unobserve(entry.target);
           }
         }),
-      { threshold: 0.08, rootMargin: "0px 0px -30px 0px" },
+      { threshold: 0.05, rootMargin: "0px 0px -40px 0px" },
     );
-    elements.forEach((element) => observer.observe(element));
-    return () => observer.disconnect();
-  }, [root]);
+
+    const observeAll = () => {
+      const elements = root.current?.querySelectorAll<HTMLElement>(".scroll-reveal:not(.is-revealed)");
+      elements?.forEach((element) => {
+        // If element is already within viewport on mount, reveal immediately
+        const rect = element.getBoundingClientRect();
+        if (rect.top < window.innerHeight && rect.bottom > 0) {
+          element.classList.add("is-revealed");
+        } else {
+          observer.observe(element);
+        }
+      });
+    };
+
+    observeAll();
+
+    // In case new children are rendered dynamically (e.g. charts / async data)
+    const mutationObserver = new MutationObserver(() => {
+      observeAll();
+    });
+
+    mutationObserver.observe(root.current, { childList: true, subtree: true });
+
+    return () => {
+      observer.disconnect();
+      mutationObserver.disconnect();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [root, ...deps]);
 }

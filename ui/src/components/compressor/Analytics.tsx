@@ -67,13 +67,13 @@ export function Analytics({ data }: { data: AnalyticsResult | null }) {
         <span className="section-badge">{data ? `${data.runs_total} paired runs in history` : "Loading workbook history…"}</span>
       </div>
       <div className="stats-grid">
-        <StatCard icon={<Scissors size={17} />} label="Avg. prompt tokens saved" value={formatNumber(data?.avg_prompt_token_reduction_percent, 1)} unit="%" tone="emerald" foot="Provider-reported Groq prompt usage" />
-        <StatCard icon={<Zap size={17} />} label="Net latency saved (incl. compression)" value={formatNumber(data?.avg_latency_saved_ms, 0)} unit="ms" tone="cyan" foot="Baseline LLM time minus compression plus compressed LLM time" />
-        <StatCard icon={<Target size={17} />} label="Reference-answer Jaccard" value={formatNumber(data?.avg_quality_retention_percent, 1)} unit="%" tone="neutral" foot="Lexical overlap proxy, not semantic quality" />
-        <StatCard icon={<Link2 size={17} />} label="Coreferences preserved" value={formatNumber(data?.coreferences_preserved)} unit="edges" tone="gray" foot="Total edges across paired runs" />
+        <StatCard icon={<Scissors size={17} />} label="Avg. prompt tokens saved" value={formatNumber(data?.avg_prompt_token_reduction_percent, 1)} unit="%" tone="emerald" foot="Provider-reported Groq prompt usage" delay={0} />
+        <StatCard icon={<Zap size={17} />} label="Net latency saved (incl. compression)" value={formatNumber(data?.avg_latency_saved_ms, 0)} unit="ms" tone="cyan" foot="Baseline LLM time minus compression plus compressed LLM time" delay={100} />
+        <StatCard icon={<Target size={17} />} label="Reference-answer Jaccard" value={formatNumber(data?.avg_quality_retention_percent, 1)} unit="%" tone="neutral" foot="Lexical overlap proxy, not semantic quality" delay={200} />
+        <StatCard icon={<Link2 size={17} />} label="Coreferences preserved" value={formatNumber(data?.coreferences_preserved)} unit="edges" tone="gray" foot="Total edges across paired runs" delay={300} />
       </div>
       <div className="analytics-grid">
-        <article className="chart-card performance-card">
+        <article className="chart-card performance-card scroll-reveal" style={{ "--reveal-delay": "100ms" } as CSSProperties}>
           <div className="chart-heading">
             <div><h3>Prompt reduction and net latency impact</h3><p>Prompt-token usage and end-to-end compression-path latency · last ten paired runs</p></div>
             <div className="chart-legend">
@@ -106,7 +106,7 @@ export function Analytics({ data }: { data: AnalyticsResult | null }) {
           )}
           <div className="chart-foot"><span><span className="status-dot" />Actual provider-reported prompt counts</span><span>Net latency includes compression time</span></div>
         </article>
-        <article className="chart-card intent-card">
+        <article className="chart-card intent-card scroll-reveal" style={{ "--reveal-delay": "180ms" } as CSSProperties}>
           <div className="chart-heading"><div><h3>The right context for every query.</h3><p>Recorded query-intent distribution</p></div></div>
           {totalIntents ? (
             <div className="intent-chart-layout">
@@ -142,7 +142,7 @@ export function Analytics({ data }: { data: AnalyticsResult | null }) {
             <EmptyChart>No query intents have been recorded yet.</EmptyChart>
           )}
         </article>
-        <article className="chart-card heatmap-card">
+        <article className="chart-card heatmap-card scroll-reveal" style={{ "--reveal-delay": "260ms" } as CSSProperties}>
           <div className="chart-heading"><div><h3>Paired run history</h3><p>Activity and prompt-token savings · last 105 paired runs</p></div><span className="section-badge">{data?.runs_total ?? 0} total runs</span></div>
           <div className="heatmap-months"><span>EARLIER</span><span>RECENT</span></div>
           <Tooltip.Provider delayDuration={100}>
@@ -184,6 +184,7 @@ function StatCard({
   unit,
   tone,
   foot,
+  delay = 0,
 }: {
   icon: ReactNode;
   label: string;
@@ -191,9 +192,13 @@ function StatCard({
   unit: string;
   tone: string;
   foot: string;
+  delay?: number;
 }) {
   return (
-    <article className={`stat-card tone-${tone}`}>
+    <article
+      className={`stat-card tone-${tone} scroll-reveal`}
+      style={{ "--reveal-delay": `${delay}ms` } as CSSProperties}
+    >
       <div className="stat-label"><span>{label}</span>{icon}</div>
       <div className="stat-value">{value}<small>{unit}</small></div>
       <div className="stat-foot">{foot}</div>

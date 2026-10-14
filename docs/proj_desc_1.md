@@ -1091,3 +1091,340 @@ proxy context budget remains the default.
 The current backend revision was compiled and the focused gating and compressor
 tests passed after these defaults were restored. The full test suite has not
 been rerun for this restoration.
+
+## 19. Current Implementation Reference and Handoff (2026-10-13)
+
+This section is an additive, code-oriented reference for the implementation
+currently present in the repository. It supplements the earlier overview and
+records the current runtime behavior after the retrieval, technical-term
+matching, compression, and UI work. Where earlier sections describe older
+values or architecture, use the explicit current values below when operating
+the present code. No earlier section has been rewritten.
+
+### 19.1 Runtime components and responsibility boundaries
+
+The current implementation has two supported input paths:
+
+```text
+Document path: upload -> page extraction -> chunk -> embed/index
+               -> dense + lexical candidate retrieval -> cross-encoder rerank
+               -> compression -> optional Groq generation
+
+Legacy path:   caller-provided passage strings -> compression
+               -> optional Groq baseline/compressed comparison
+```
+
+- `ingestion/pdf_extractor.py` uses `pypdf.PdfReader` on in-memory bytes. It
+  creates a UUID `doc_id` unless one is supplied, emits one `PageMetadata`
+  record per PDF page, and keeps page number, extracted text, extraction status,
+  and optional section title. Empty, corrupt, and password-protected PDFs
+  return actionable errors. It detects pages with no extractable text and
+  reports that OCR is required; no OCR engine is implemented.
+- `ingestion/chunker.py` combines page text into token-bounded `TextChunk`
+  records. Defaults are 500 tokenizer units with 80 units of overlap; the API
+  permits target sizes from 100–1,000 and overlap from 0–200. It prefers
+  paragraph and sentence boundaries, then splits oversized units into token
+  windows. Each chunk carries a UUID, `doc_id`, page start/end, optional section
+  title, and token count. The preferred tokenizer is the local Hugging Face
+  tokenizer for `sentence-transformers/all-MiniLM-L6-v2`; when unavailable, a
+  regex token codec is used. This is a chunk-size tokenizer, separate from the
+  Groq prompt token count.
+- `retrieval/vector_store.py` keeps `DocumentIndex` objects in process memory,
+  including chunks, normalized vectors, token-term frequencies, document
+  frequencies, average document length, and backend identity. A reentrant lock
+  protects index creation. Indexes and uploaded pages are not persisted and
+  disappear on process restart; multiple API workers do not share this state.
+- `retrieval/lexical.py` normalizes common LaTeX subscripts such as
+  `$d_{model}$` to `d_model`, tokenizes identifiers while preserving
+  underscores, detects numeric/formula/parameter lookups, and counts exact
+  requested-term matches. It maps natural-language aliases such as “model
+  dimensions,” “key dimensions,” “value dimensions,” and “number of heads” to
+  common identifiers (`d_model`, `d_k`, `d_v`, `h`).
+- `retrieval/reranker.py` applies a cross-encoder to the first-stage candidates
+  and returns retrieval and rerank score/rank provenance. Supported models are
+  `cross-encoder/ms-marco-MiniLM-L-6-v2` and
+  `cross-encoder/stsb-roberta-base`; unsupported names are rejected. The API
+  defaults to the MS MARCO model and `/retrieve` permits choosing the listed
+  STS-B alternative.
+- `compression/compressor.py`, `gating.py`, `scorer.py`, `coreference.py`, and
+  `models/cross_encoder.py` implement sentence selection, described below.
+- `service/api.py` owns request validation, caches, lifecycle hooks, provenance
+  mapping, Groq orchestration, workbook writes, and optional serving of the
+  compiled UI. `service/groq_client.py` owns provider request construction and
+  usage/latency parsing.
+
+### 19.2 Embedding model, retrieval math, and technical lookup protection
+
+The dense encoder is the Sentence Transformers bi-encoder
+`sentence-transformers/all-MiniLM-L6-v2`. `VectorStore._encode()` encodes each
+chunk at index time and each query at retrieval time with
+`normalize_embeddings=True`; the model's normal output is 384 dimensions.
+Cosine similarity is the dot product of the normalized vectors. The model is
+loaded lazily by the vector store and, in the API process, preloaded from the
+FastAPI lifespan hook. This is a bi-encoder: document vectors can be computed
+once and reused independently of a query.
+
+Dense search is combined with a local BM25-style lexical scorer. Terms are
+normalized using the lexical module; per-chunk term frequencies and document
+frequencies are computed when indexing. The implementation uses `k1 = 1.5`,
+`b = 0.75`, a logarithmic inverse-document-frequency term, and a modest query
+term-frequency multiplier. Scores are normalized relative to the best lexical
+match for that query. Dense cosine is mapped from `[-1, 1]` into `[0, 1]` and
+clamped. The combined first-stage score is:
+
+```text
+Ordinary query:       0.60 * dense + 0.40 * normalized BM25
+Technical exact query: 0.25 * dense + 0.50 * normalized BM25
+                      + 0.25 * normalized exact-identifier matches
+```
+
+The ranking is deterministic for ties by original chunk order. The exact-term
+signal uses identifier/formula matches; exact lookup detection is also used in
+the reranker and compressor. In reranking, an exact-match bonus of up to 0.20
+is added relative to the number of requested technical terms. During
+compression, sentences matching at least one requested technical term are
+protected as mandatory selected evidence before context packing. The behavior
+helps exact parameter queries but does not prove the value is correct or that
+all query aliases are recognized.
+
+When the Sentence Transformers import, cache, or model load fails, the index
+uses a deterministic 2,048-dimensional signed feature-hashing vector based on
+lowercased regex tokens and token counts. It L2-normalizes the result and
+reports backend `offline-hash-fallback`; this is not semantic embedding and
+should not be represented as MiniLM inference. `/index` reports the actual
+backend and model field (the embedding model is null on fallback).
+
+### 19.3 Cross-encoder inference and score interpretation
+
+The reranker and compressor scorer are cross-encoders: they receive paired
+query/text inputs together, allowing token-level interaction. The compressor's
+default model is `cross-encoder/stsb-roberta-base`; the retrieval rerank default
+is `cross-encoder/ms-marco-MiniLM-L-6-v2`. Both use Hugging Face
+`AutoTokenizer` and `AutoModelForSequenceClassification` through
+`CrossEncoderRelevanceScorer` in `models/cross_encoder.py`.
+
+The inference path tokenizes paired inputs with padding, truncation, PyTorch
+tensors, and a default maximum sequence length of 256. It runs in batches of 16
+under `torch.no_grad()`, moves model and tensors to the configured device (CPU
+by default), and sets loaded models to evaluation mode. A one-logit output is
+transformed with sigmoid; a multi-logit output uses the second-class softmax
+probability. These transformations produce bounded, rankable values, but do
+not calibrate the STS-B regression output or make it an entailment probability.
+
+If imports or loading fail, the scorer falls back to deterministic expanded
+lexical overlap. A small hard-coded expansion dictionary covers terms such as
+climate/warming, greenhouse/emissions, cause/result, and effect/impact. It
+counts query/candidate token overlap as a fraction of expanded query terms,
+capped at 1. `/config` reports whether Transformers are importable and whether
+the embedding, retrieval reranker, and compression scorer are loaded in their
+real-model paths. Availability is not a model quality or provider-connectivity
+test.
+
+The small smoke comparison recorded earlier in Section 16 remains a curated
+10-query / 20-candidate CPU comparison, not a broad retrieval benchmark. Its
+latency and pairwise accuracy should not be generalized to arbitrary PDFs or
+queries. `CrossEncoderReranker` currently constructs its scorer without an
+explicit device override, so its normal default is CPU. The compressor scorer
+uses `RuntimeConfig`, whose current defaults are STS-B, CPU, batch size 16,
+sequence length 256, threshold 0.10, top-k 4, and a 4,000 local word-proxy
+context cap.
+
+### 19.4 Compression selection algorithm, in execution order
+
+`ContextCompressor.compress()` currently performs these operations:
+
+1. Convert a single input string into a one-element passage list, then split
+   each passage with the regex sentence splitter. Candidate indices are
+   zero-based and span the supplied passage sequence; passage identity is
+   retained so pair scoring and neighbors do not cross passage boundaries.
+2. Analyze query complexity with `QueryComplexityGater`. Features include
+   comparative phrases, reasoning starters, logical/sequential connectives,
+   capitalized-span entity proxies, long queries (14 or more words), and
+   technical exact lookups. This is a hand-authored heuristic, not a trained
+   intent classifier.
+3. Batch-score each query/sentence pair. When multi-hop scoring is enabled,
+   also score contiguous same-passage pairs if at least one sentence reaches
+   the 0.10 pair candidate floor. Pairwise gain for the current sentence is
+   `max(0, joint_score - predecessor_isolated_score)`. Its final weight is
+   `0.70 * current_isolated_score + 0.30 * pairwise_gain` for eligible
+   within-passage successors; otherwise the isolated score is retained. A
+   dependency edge is recorded when the joint score exceeds both individual
+   scores by more than 0.05. This is a local relevance heuristic, not NLI.
+4. Set the active threshold to explicit request `threshold`, otherwise the
+   adaptive threshold, otherwise `RuntimeConfig.threshold` when adaptive gating
+   is disabled. Current adaptive formulas are `tau = clamp(0.10 + 0.10*C,
+   0.10, 0.20)` and `ratio = clamp(0.80 + 0.05*C, 0.75, 0.85)`, where `C` is
+   query complexity clamped to `[0,1]`. An explicit threshold only overrides
+   the cutoff, not the ratio. With gating disabled and no override, cutoff is
+   0.10 and no adaptive ratio is reported.
+5. Estimate original text size with a lowercase regex word count. If adaptive
+   gating is on, the word budget is at most the rounded input-size times the
+   query's context ratio, further capped by `max_tokens` or the default 4,000.
+   Despite the API field name, this local cap is not exact tokenizer tokens.
+6. Filter by relevance cutoff. If fewer than
+   `min(candidate_count, max(5, floor(0.60*candidate_count))` candidates pass,
+   select the highest scores to that fallback floor. Then select up to the
+   larger of request/default top-k (default 4) and the active fallback floor.
+   Technical exact-match sentences are included as protected candidates. Ties
+   use original sentence order. This safeguard is current behavior and
+   supersedes the 70%/top-8 proposal described in older conversation-derived
+   notes; that proposal is not the current implementation.
+7. Add immediate predecessor and successor sentences around initially selected
+   evidence, constrained to the same passage. Find local discourse/coreference
+   edges when enabled and include required antecedents. Pairwise dependency
+   edges join this dependency set. Selected sentences are returned in source
+   order.
+8. Pack whole connected dependency groups into the word budget. Exact-match
+   selections, fallback selections, and adjacent context are protected. A
+   protected group can exceed the nominal budget; if nothing has yet fit, the
+   highest-ranked complete group is retained to avoid dropping all evidence.
+9. Return compressed text, estimated counts/reduction, score parts and timings,
+   query-gate fields, original indices, dependency counts, and a complete audit
+   with reason strings for each retained/discarded candidate.
+
+When `enable_coref` is true, `DiscoursePreserver` optionally loads
+spaCy `en_core_web_sm` and batches eligible sentences through its parser to
+identify subject pronouns. This package/model is optional; if missing, regex
+fallbacks recognize selected leading references (`it`, `they`, `this`, etc.)
+and discourse connectives (`however`, `therefore`, `as a result`, etc.). Links
+are only made to the immediately preceding sentence in the same input
+passage. spaCy's standard pipeline is not a general coreference resolver. If
+`enable_multihop` is false, pairwise scores/edges are skipped; if
+`enable_coref` is false, discourse-link analysis is skipped, but the normal
+sentence scorer still runs.
+
+### 19.5 API behavior and state details
+
+Current routes are `/health`, `/config`, `/upload_pdf`, `/index`, `/retrieve`,
+`/analytics`, `/compress`, and `/compare`, plus `GET /` for the local fallback
+or optional built UI. The raw passage workflow is retained: callers may provide
+`documents[]` to `/compress` and `/compare`; doc-index workflows use `doc_id`
+and query/top-k controls. `/compare` requires one usable context source and
+supports optional expected answer, test-case label, compression controls, and
+a Groq token-per-minute preflight allowance. Upload accepts PDF or UTF-8 TXT,
+with a 25 MiB upload limit. TXT files are split by blank lines; PDF extraction
+preserves page records. Scanned PDFs need OCR externally.
+
+`/index` defaults to 500 tokenizer units per chunk and 80 units overlap. It
+returns page/chunk counts, active embedding backend/model, retrieval method,
+and a `psutil` RSS profile if psutil is importable. The sampler polls process
+RSS every 50 ms during indexing and logs/returns start, sampled peak, and end
+RSS in MiB. If psutil is unavailable, indexing continues with a warning and a
+null memory profile. The profile is process RSS (which includes model/runtime
+memory), not a GPU allocator or per-document-only memory measurement.
+
+`/retrieve` first-stage `top_k` defaults to 30 (maximum 200); reranked count
+defaults to 8 (maximum 50). Results include chunk ID, document ID, text, page
+range, section title, chunk token count, and retrieval/rerank scores and ranks.
+`/compress`/`/compare` doc workflows similarly return selected retrieval
+chunks, then map their page/rank/score provenance onto sentence audit records.
+If `doc_id` has not been uploaded/indexed in this same process, API responses
+are explicit errors (upload is 404 on a lost process cache; retrieve reports
+that indexing is required). The process-local cache is single-process
+development storage, not durable multi-user document storage.
+
+The FastAPI lifespan function loads MiniLM and the MS MARCO reranker once at
+process startup. The compression scorer is created with the module-level
+`ContextCompressor`; rerankers are cached by model name. No model should be
+re-instantiated per sentence or per request in this API process. If model
+loading fails, the application may continue with the documented fallbacks;
+use `/config` to inspect model-path status. `GET /health` is only a basic
+process health signal and does not ping Groq or validate all loaded models.
+
+For `/compare`, the service creates two grounded prompts with the same query,
+configured Groq model, and system grounding instructions: all provided or
+retrieved text for baseline, and selected compressed text for the other path.
+It fits contexts against its preflight prompt budget and sends both Groq calls
+concurrently via `asyncio.gather`. Groq's returned prompt/completion usage is
+the source for actual-token metrics; missing provider usage remains null rather
+than being replaced with word estimates. Optional `expected_answer` comparison
+uses Jaccard lexical similarity only. Successful paired metrics are appended
+to `reports/eval_met.xlsx`; workbook write errors are surfaced in response
+metadata. `/compress` makes no Groq request. Comparisons use two provider calls
+and can consume quota. Failure of either branch fails the paired result rather
+than recording a misleading partial pair.
+
+### 19.6 UI behavior and API connectivity
+
+The main UI is the React 19/TanStack Start application under `ui/`. Vite
+serves it on `127.0.0.1:3000` and proxies API paths to FastAPI on
+`127.0.0.1:8000`. Proxied paths include comparison/compression, PDF upload,
+index/retrieve, analytics, configuration, and health. The playground supports
+raw passages and uploaded-document retrieval, compression-only execution,
+paired Groq comparison, and retained/discarded sentence audit. The analytics
+view reads saved workbook rows; it does not imply an independent evaluation
+corpus.
+
+The dashboard requests `/config` for live service/model/key-configuration
+indicators. A green Groq-key indicator means a key is configured, not that the
+Groq provider was pinged. The MiniLM and cross-encoder indicators report local
+load/fallback state, not retrieval accuracy. Scroll-reveal uses
+`IntersectionObserver` and honors reduced-motion CSS. The particle canvas is
+fixed to the viewport, rendered behind interactive content, uses the active
+theme's `--particle` token, drifts continuously, reacts to nearby mouse motion,
+and removes listeners/animation frames on unmount. Light/dark variables retain
+separate contrast values; the metrics area continues to show workbook data.
+
+FastAPI serves a self-contained `service/static/index.html` fallback at `/`
+when a compiled React index is unavailable. If `ui/dist/client/index.html` (or
+fallback `ui/dist/index.html`) exists, root serves that built index and a
+conditional catch-all `StaticFiles` mount serves its assets after API route
+definitions. In local development, Vite remains the primary UI server and
+proxies API requests; the backend's optional static mount does not replace
+Vite. The Dockerfile and `.dockerignore` previously used for container hosting
+have since been deleted from the working tree at the user's request. README
+contains no Hugging Face YAML deployment header. Do not assume a container
+deployment configuration is currently present.
+
+### 19.7 Evaluation, test coverage, and evidence limits
+
+`scripts/evaluate_pipeline.py` accepts a JSON case manifest containing PDF
+path, query, optional reference answer, and a declared document length tier. It
+requires corpus coverage across short (4–10 pages), medium (20–30 pages), and
+long (50+ pages) sets before writing rows. For each case it records four
+configurations: direct legacy Limas compression; retrieval only; retrieval plus
+Limas compression; and retrieval plus a transparent top-four extractive
+baseline. The retrieval benchmark worksheet stores tier/case/configuration,
+page count, Recall@k, lexical Jaccard quality proxy when an answer is supplied,
+estimated prompt-token reduction, context size, and overall/retrieval/
+compression latency fields. Its token reduction and quality fields are local
+estimates/proxies, not Groq answer-evaluation results. The script does not
+itself generate LLM answers.
+
+`tests/test_pipeline.py` exercises sentence splitting/scoring/compression,
+gating, discourse/pair dependencies, API health/config/compression/upload,
+mocked paired generation and errors, analytics, and workbook migrations.
+`tests/test_retrieval_pipeline.py` exercises PDF extraction, chunking/page
+provenance, synthetic 50-page ingestion, vector-store caching/ranking,
+preflight context budgets, and upload-index-retrieve-doc_id integration. Mocked
+or fallback tests verify control flow but do not prove that hosted model
+weights loaded. Real model verification requires startup logs or `/config`
+showing the model paths and an actual embedding/reranking request. The full
+short/medium/long corpus evaluation remains pending unless corresponding
+manifest cases and workbook rows are supplied and run. Do not claim a completed
+multi-length quality benchmark or less than 10 GB production RAM use from a
+synthetic profile alone.
+
+### 19.8 Current configuration and local run checklist
+
+Backend Python dependencies are in `requirements.txt`; package metadata and
+the optional `discourse` spaCy extra are in `pyproject.toml`. Runtime defaults
+are in `config.py`. `.env.example` documents `GROQ_API_KEY` and model selection;
+the real key belongs in an untracked local `.env`. The React package scripts
+are `npm run dev`, `npm run build`, and `npm run start` from `ui/`.
+
+For local use, activate the Python environment, install backend requirements,
+and run `python -m uvicorn src.context_compressor.service.api:app --reload
+--host 127.0.0.1 --port 8000` from the repository root. In a second terminal,
+run `npm install` once and `npm run dev` from `ui/`; open
+`http://127.0.0.1:3000`. Check `http://127.0.0.1:8000/health` and
+`/config`. Model weights may need downloading on first startup; if offline,
+check whether the API reports fallbacks. Set a valid local Groq key only for
+live `/compare` requests. Automated API comparison tests use mocks and avoid
+provider quota. Keep `reports/eval_met.xlsx` closed in spreadsheet applications
+while the service appends metrics.
+
+The latest Git state may show `Dockerfile` and `.dockerignore` as deleted but
+unstaged, because those tracked deployment artifacts were deliberately removed
+for manual review/commit. No Git staging or commit is implied by this guide
+update.

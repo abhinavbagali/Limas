@@ -10,7 +10,6 @@ import {
   Database,
   FileText,
   Github,
-  Layers3,
   MessageSquare,
   Moon,
   Network,
@@ -25,7 +24,11 @@ import {
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Analytics } from "@/components/compressor/Analytics";
-import { ParticleField } from "@/components/compressor/ParticleField";
+import CursorRingField from "@/components/effects/CursorRing";
+import DynamicWeightText from "@/components/effects/DynamicWeightText";
+import FluidText from "@/components/effects/FluidText";
+import ParticleDrift from "@/components/effects/ParticleDrift";
+import Constellation from "@/components/effects/Constellation";
 import { Playground } from "@/components/compressor/Playground";
 import { Button } from "@/components/ui/button";
 import { getAnalytics, getRuntimeConfig, type AnalyticsResult, type RuntimeConfig } from "@/lib/api";
@@ -68,7 +71,7 @@ function LimasHome() {
   const [selectedStep, setSelectedStep] = useState<number | null>(null);
   const [selectedModule, setSelectedModule] = useState<number | null>(null);
 
-  useScrollReveal(pageRef);
+  useScrollReveal(pageRef, [analytics]);
 
   useEffect(() => {
     try {
@@ -148,11 +151,49 @@ function LimasHome() {
   return (
     <Tooltip.Provider delayDuration={250}>
       <div className={`app-shell ${dark ? "dark" : ""}`} ref={pageRef}>
+        <div className="background-effects" aria-hidden="true">
+          <Constellation
+            color={dark ? "#a855f7" : "#818cf8"}
+            lineColor={dark ? "#6366f1" : "#a5b4fc"}
+            count={70}
+            maxDistance={155}
+            speed={0.35}
+          />
+          <ParticleDrift
+            background="transparent"
+            baseColor={dark ? "#94a3b8" : "#52627a"}
+            accentColor={dark ? "#74e2c0" : "#5365d8"}
+            density={120}
+            dotSize={3}
+            speed={18}
+            hover={85}
+            linkDistance={145}
+            style={{ position: "fixed", inset: 0, width: "100vw", height: "100vh", pointerEvents: "none" }}
+          />
+          <CursorRingField
+            background="transparent"
+            ringColor={dark ? "#91a0ff" : "#5869bd"}
+            colors={dark ? ["#7f91ff", "#55cbb0", "#31427d"] : ["#5869bd", "#4c7c83", "#34445f"]}
+            density={110}
+            dotSize={82}
+            speed={3}
+            ring={{ push: 42, width: 9, radius: 14, turbulence: 75 }}
+            style={{ position: "fixed", inset: 0, width: "100vw", height: "100vh", pointerEvents: "none", background: "transparent" }}
+          />
+        </div>
         <header className="topbar">
           <div className="nav-inner">
             <a className="brand-lockup" href="#overview" onClick={(event) => { event.preventDefault(); navigateTo("overview"); }}>
-              <span className="brand-symbol"><Layers3 size={21} /></span>
-              <span className="brand-text"><strong>Limas</strong><small>SUBCORTICAL CONTEXT COMPRESSION</small></span>
+              <span className="brand-symbol" title="Limas — Subcortical Context Compression">
+                <svg width="24" height="24" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M4 6C4 4.89543 4.89543 4 6 4H22C23.1046 4 24 4.89543 24 6V8C24 9.10457 23.1046 10 22 10H6C4.89543 10 4 9.10457 4 8V6Z" fill="currentColor" fillOpacity="0.35"/>
+                  <path d="M7 13C7 11.8954 7.89543 11 9 11H19C20.1046 11 21 11.8954 21 13V15C21 16.1046 20.1046 17 19 17H9C7.89543 17 7 16.1046 7 15V13Z" fill="currentColor" fillOpacity="0.7"/>
+                  <path d="M10 20C10 18.8954 10.8954 18 12 18H16C17.1046 18 18 18.8954 18 20V22C18 23.1046 17.1046 24 16 24H12C10.8954 24 10 23.1046 10 22V20Z" fill="currentColor"/>
+                  <circle cx="14" cy="14" r="2.5" fill="#06b6d4"/>
+                  <path d="M4 14H6M22 14H24" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+              </span>
+              <span className="brand-text"><strong><DynamicWeightText label="Limas" className="limas-brand-text" /></strong><small>SUBCORTICAL CONTEXT COMPRESSION</small></span>
             </a>
             <nav className="main-nav" aria-label="Main navigation">
               {[["playground", "Playground"], ["metrics", "Metrics & Analytics"], ["architecture", "Architecture"]].map(([id, label]) => (
@@ -162,17 +203,28 @@ function LimasHome() {
             <div className="nav-controls">
               <span className={`api-pill ${config === null ? "api-unknown" : config.groq_configured ? "" : "api-warning"}`}><span className="status-dot" />{serviceLabel}</span>
               <Button variant="ghost" size="icon" aria-label={dark ? "Switch to light theme" : "Switch to dark theme"} title={dark ? "Light theme" : "Dark theme"} onClick={toggleTheme}>{dark ? <Sun size={17} /> : <Moon size={17} />}</Button>
-              <a className="github-link" href="https://github.com" target="_blank" rel="noreferrer"><Github size={14} /><span>GitHub</span><ArrowUpRight size={12} /></a>
+              <a className="github-link" href="https://github.com/abhinavbagali/Limas" target="_blank" rel="noreferrer"><Github size={14} /><span>GitHub</span><ArrowUpRight size={12} /></a>
             </div>
           </div>
         </header>
 
         <main>
           <section id="overview" className="hero-section">
-            <ParticleField />
             <div className="hero-copy scroll-reveal">
               <div className="hero-eyebrow"><span className="status-dot" />INTELLIGENT MIDDLEWARE FOR RAG <i />v2.0</div>
-              <div className="hero-title-row"><h1>Limas</h1><span className="hero-subtitle-pill">Subcortical Context Compression Middleware</span></div>
+              <div className="hero-title-row">
+                <h1 aria-label="Limas" className="hero-limas-heading">
+                  <span className="hero-limas-gradient-wrap">
+                    <FluidText
+                      text="LIMAS"
+                      color={dark ? "rgba(240, 243, 255, 0.98)" : "rgba(30, 38, 62, 0.98)"}
+                      paletteColors={dark ? ["#818cf8", "#a855f7", "#06b6d4"] : ["#6366f1", "#a855f7", "#06b6d4"]}
+                      font={{ fontFamily: "Plus Jakarta Sans, sans-serif", fontSize: "88px", fontWeight: 800, lineHeight: "1.08em", textAlign: "center" }}
+                      style={{ width: "320px", height: "105px", pointerEvents: "none" }}
+                    />
+                  </span>
+                </h1>
+              </div>
               <p className="hero-description">Precision context compression for high-efficiency RAG pipelines. Reduce prompt bloat, preserve discourse integrity, and let every retrieved sentence earn its place.</p>
               <div className="hero-actions">
                 <Button size="lg" onClick={() => navigateTo("playground")}><Scissors size={15} />Try live compressor<ArrowRight size={15} /></Button>
@@ -239,7 +291,17 @@ function LimasHome() {
 
         <footer className="site-footer">
           <div className="footer-top">
-            <a className="footer-brand" href="#overview" onClick={(event) => { event.preventDefault(); navigateTo("overview"); }}><span className="brand-symbol"><Layers3 size={18} /></span><span><strong>Limas v2.0</strong><small>Subcortical Context Compression Middleware</small></span></a>
+            <a className="footer-brand" href="#overview" onClick={(event) => { event.preventDefault(); navigateTo("overview"); }}>
+              <span className="brand-symbol">
+                <svg width="20" height="20" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M4 6C4 4.89543 4.89543 4 6 4H22C23.1046 4 24 4.89543 24 6V8C24 9.10457 23.1046 10 22 10H6C4.89543 10 4 9.10457 4 8V6Z" fill="currentColor" fillOpacity="0.35"/>
+                  <path d="M7 13C7 11.8954 7.89543 11 9 11H19C20.1046 11 21 11.8954 21 13V15C21 16.1046 20.1046 17 19 17H9C7.89543 17 7 16.1046 7 15V13Z" fill="currentColor" fillOpacity="0.7"/>
+                  <path d="M10 20C10 18.8954 10.8954 18 12 18H16C17.1046 18 18 18.8954 18 20V22C18 23.1046 17.1046 24 16 24H12C10.8954 24 10 23.1046 10 22V20Z" fill="currentColor"/>
+                  <circle cx="14" cy="14" r="2.5" fill="#06b6d4"/>
+                </svg>
+              </span>
+              <span><strong>Limas v2.0</strong><small>Subcortical Context Compression Middleware</small></span>
+            </a>
             <div className="footer-routes"><code>POST /index</code><code>POST /retrieve</code><code>POST /compress</code><code>POST /compare</code><code>GET /analytics</code></div>
             <span className="footer-api-status"><span className="status-dot" />{serviceLabel}</span>
           </div>
